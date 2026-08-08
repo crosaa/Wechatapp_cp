@@ -1,0 +1,6 @@
+{
+  "navigationStyle": "custom",
+  "usingComponents": {
+    "stable-image": "/components/stable-image/stable-image"
+  }
+}

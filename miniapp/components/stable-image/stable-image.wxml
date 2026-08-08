@@ -1,0 +1,21 @@
+<view class="stable-image {{loaded ? 'is-loaded' : ''}} {{failed ? 'is-failed' : ''}} {{previousSrc ? 'has-previous' : ''}}" catchtap="onTap">
+  <view class="stable-image__placeholder"></view>
+  <image
+    wx:if="{{previousSrc}}"
+    class="stable-image__content stable-image__previous"
+    src="{{previousSrc}}"
+    mode="{{mode}}"
+    fade-in="{{false}}"
+  />
+  <image
+    wx:if="{{src}}"
+    class="stable-image__content"
+    src="{{src}}"
+    mode="{{mode}}"
+    lazy-load="{{lazyLoad}}"
+    fade-in="{{false}}"
+    show-menu-by-longpress="{{showMenuByLongpress}}"
+    bindload="onLoad"
+    binderror="onError"
+  />
+</view>

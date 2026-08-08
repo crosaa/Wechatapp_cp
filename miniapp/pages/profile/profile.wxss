@@ -1,0 +1,20 @@
+.profile-page { background: #f2f0eb; }
+.profile-hero { display: flex; align-items: center; min-height: 290rpx; padding: 44rpx 34rpx 70rpx; background: linear-gradient(145deg, #f8df91, #dcaa38); }
+.profile-mark { display: flex; align-items: center; justify-content: center; width: 122rpx; height: 122rpx; border: 7rpx solid rgba(255,255,255,.72); border-radius: 50%; background: #252622; color: #f8df91; font-family: serif; font-size: 38rpx; font-weight: 800; }
+.profile-logo { width: 122rpx; height: 122rpx; flex-shrink: 0; overflow: hidden; border: 7rpx solid rgba(255,255,255,.72); border-radius: 50%; background: white; box-sizing: border-box; }
+.profile-copy { flex: 1; margin-left: 24rpx; }
+.profile-store { margin-bottom: 4rpx; color: #66501e; font-size: 20rpx; font-weight: 700; letter-spacing: 2rpx; }
+.profile-name { font-size: 36rpx; font-weight: 900; }
+.profile-desc { margin-top: 8rpx; color: #75591e; font-size: 22rpx; }
+.profile-card { margin: 22rpx; border-radius: 20rpx; }
+.layout-brand .profile-hero { min-height: 330rpx; background: linear-gradient(145deg, #244f3d, #3f735b); color: white; }
+.layout-brand .profile-store, .layout-brand .profile-desc { color: #c6dbcf; }
+.layout-brand .profile-card { margin-top: -38rpx; position: relative; }
+.profile-card { padding: 24rpx 10rpx 20rpx; }
+.profile-card-title { padding: 0 18rpx 20rpx; font-size: 29rpx; font-weight: 800; }
+.service-grid { display: grid; grid-template-columns: repeat(4, 1fr); row-gap: 26rpx; }
+.service-grid view { display: flex; flex-direction: column; align-items: center; color: #625f59; font-size: 21rpx; }
+.service-icon { display: flex; align-items: center; justify-content: center; height: 58rpx; margin-bottom: 9rpx; color: #b8882d; font-size: 32rpx; font-weight: 900; }
+.about-card { margin: 22rpx; padding: 24rpx 28rpx; border-radius: 20rpx; color: #6f6b64; font-size: 23rpx; line-height: 1.8; }
+.about-card .profile-card-title { padding: 0 0 12rpx; color: #282822; }
+.profile-foot { padding: 70rpx 0 40rpx; text-align: center; color: #aaa69d; font-size: 20rpx; letter-spacing: 2rpx; }

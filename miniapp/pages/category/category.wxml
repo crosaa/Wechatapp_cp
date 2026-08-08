@@ -1,0 +1,96 @@
+<view class="category-shell">
+  <view class="page-navigation" style="padding-top: {{pageNavigation.statusBarHeight}}rpx;">
+    <view class="page-navigation__bar" style="height: {{pageNavigation.navigationBarHeight}}rpx;">
+      <view class="page-navigation__back" bindtap="goBack" aria-label="返回">
+        <view class="page-navigation__back-icon"></view>
+      </view>
+      <text class="page-navigation__title">商品分类</text>
+    </view>
+  </view>
+
+  <view class="page category-page">
+    <view class="category-header surface">
+    <view class="search-box compact-search" bindtap="openSearch" role="button" aria-label="打开商品搜索">
+      <text class="search-icon">⌕</text>
+      <view class="search-input {{keyword ? 'search-entry-value' : 'search-entry-placeholder'}}">{{keyword || searchPlaceholder}}</view>
+    </view>
+    <view class="sort-row">
+      <view class="sort-inner">
+        <view class="sort-chip {{sort === '综合' ? 'active' : ''}}" data-sort="综合" bindtap="setSort">综合</view>
+        <view class="sort-chip {{sort === '价格升序' ? 'active' : ''}}" data-sort="价格升序" bindtap="setSort">价格 ↑</view>
+        <view class="sort-chip {{sort === '价格降序' ? 'active' : ''}}" data-sort="价格降序" bindtap="setSort">价格 ↓</view>
+        <view class="sort-chip filter-chip {{activeFilterCount ? 'active' : ''}}" bindtap="toggleFilter">
+          <text>筛选</text>
+          <text wx:if="{{activeFilterCount}}"> · {{activeFilterCount}}</text>
+          <text class="filter-arrow">{{filterOpen ? '⌃' : '⌄'}}</text>
+        </view>
+      </view>
+    </view>
+    <view class="filter-backdrop" wx:if="{{filterOpen}}" bindtap="closeFilter"></view>
+    <view class="filter-panel" wx:if="{{filterOpen}}" catchtap="noop">
+      <view class="filter-section">
+        <view class="filter-title">库存状态</view>
+        <view class="filter-options">
+          <view class="filter-option {{draftStockFilter === 'all' ? 'selected' : ''}}" data-value="all" bindtap="chooseStockFilter">全部</view>
+          <view class="filter-option {{draftStockFilter === 'available' ? 'selected' : ''}}" data-value="available" bindtap="chooseStockFilter">有现货</view>
+          <view class="filter-option {{draftStockFilter === 'low' ? 'selected' : ''}}" data-value="low" bindtap="chooseStockFilter">库存紧张</view>
+          <view class="filter-option {{draftStockFilter === 'out' ? 'selected' : ''}}" data-value="out" bindtap="chooseStockFilter">暂时缺货</view>
+        </view>
+      </view>
+      <view class="filter-section">
+        <view class="filter-title">团购价格</view>
+        <view class="price-range">
+          <input class="price-input" type="digit" value="{{draftMinPrice}}" bindinput="onMinPrice" placeholder="最低价" />
+          <text class="price-separator">—</text>
+          <input class="price-input" type="digit" value="{{draftMaxPrice}}" bindinput="onMaxPrice" placeholder="最高价" />
+        </view>
+      </view>
+      <view class="filter-actions">
+        <view class="filter-reset" bindtap="resetFilter">重置</view>
+        <view class="filter-confirm" bindtap="applyFilter">确定</view>
+      </view>
+    </view>
+    </view>
+
+    <view class="catalog-first-frame" wx:if="{{!catalogReady}}">
+      <view class="catalog-first-side"></view>
+      <view class="catalog-first-list">
+        <view wx:for="{{[1,2,3]}}" wx:key="*this" class="catalog-first-card"></view>
+      </view>
+    </view>
+    <view class="catalog-body {{resultMode ? 'result-mode' : ''}}">
+      <scroll-view wx:if="{{!resultMode}}" class="side-nav" scroll-y="true">
+        <view class="side-item {{selected === item.name ? 'selected' : ''}}" wx:for="{{categories}}" wx:key="id" data-name="{{item.name}}" data-type="{{item.type}}" bindtap="selectCategory">
+          <text>{{item.name}}</text>
+        </view>
+      </scroll-view>
+
+      <scroll-view class="product-list {{resultMode ? 'result-mode' : ''}}" scroll-y="true" scroll-into-view="{{productScrollIntoView}}" lower-threshold="160" bindscrolltolower="loadMore">
+        <view id="product-top-a" class="product-scroll-anchor"></view>
+        <view id="product-top-b" class="product-scroll-anchor"></view>
+        <view class="result-meta"><text>{{resultTitle}}</text><text>{{resultCount}} 款</text></view>
+        <view class="list-card surface" wx:for="{{displayProducts}}" wx:key="id" data-id="{{item.id}}" bindtouchstart="warmProduct" bindtap="goProduct">
+          <view class="list-image-wrap">
+        <stable-image class="list-image" src="{{item.image}}" mode="aspectFill" lazy-load="{{true}}" data-id="{{item.id}}" bind:imagetap="goProduct" />
+            <text class="mini-badge" wx:if="{{item.badge && item.badge !== '热销' && item.badge !== '定制'}}">{{item.badge}}</text>
+          </view>
+          <view class="list-info">
+            <view class="list-name">{{item.name}}</view>
+            <view class="list-specs">
+              <view class="list-location" wx:if="{{item.subtitle}}">货位：{{item.subtitle}}</view>
+              <view class="spec-line style-line" wx:if="{{item.style || item.displayCategory}}">风格：{{item.style || item.displayCategory}}</view>
+              <view class="spec-line">面料：{{item.fabric}}</view>
+              <view wx:if="{{item.stock === 0}}" class="stock-line out">暂时缺货</view>
+              <view wx:elif="{{item.stock <= 10}}" class="stock-line low">库存紧张 · 仅剩 {{item.stock}}</view>
+              <view wx:else class="stock-line">现货 {{item.stock}}</view>
+            </view>
+            <view class="list-price"><text class="price">¥{{item.price}}</text></view>
+          </view>
+        </view>
+        <view class="empty" wx:if="{{!displayProducts.length}}">暂无匹配商品</view>
+        <view class="load-more" wx:if="{{hasMore}}" bindtap="loadMore">继续加载</view>
+        <view class="load-complete" wx:elif="{{displayProducts.length}}">已显示全部 {{resultCount}} 款</view>
+      </scroll-view>
+    </view>
+  </view>
+</view>

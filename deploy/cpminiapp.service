@@ -1,0 +1,24 @@
+[Unit]
+Description=Xinghai Clothing Mini Program Backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cpminiapp
+Group=cpminiapp
+WorkingDirectory=/opt/cpminiapp
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/cpminiapp.env
+ExecStart=/usr/bin/node /opt/cpminiapp/server/server.mjs
+Restart=always
+RestartSec=3
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/cpminiapp
+
+[Install]
+WantedBy=multi-user.target

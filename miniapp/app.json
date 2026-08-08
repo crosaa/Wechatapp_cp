@@ -1,0 +1,34 @@
+{
+  "pages": [
+    "pages/home/home",
+    "pages/category/category",
+    "pages/search/search",
+    "pages/designer/designer",
+    "pages/profile/profile",
+    "pages/product/product",
+    "pages/product-detail/product-detail",
+    "pages/real-photos/real-photos"
+  ],
+  "lazyCodeLoading": "requiredComponents",
+  "window": {
+    "navigationBarTitleText": "普润制衣团购仓",
+    "navigationBarBackgroundColor": "#fffaf1",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f6f4ef",
+    "backgroundTextStyle": "light"
+  },
+  "tabBar": {
+    "color": "#8a8a87",
+    "selectedColor": "#d79a21",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "white",
+    "list": [
+      { "pagePath": "pages/home/home", "text": "首页", "iconPath": "assets/tabbar/home-normal.png", "selectedIconPath": "assets/tabbar/home-selected.png" },
+      { "pagePath": "pages/category/category", "text": "分类", "iconPath": "assets/tabbar/category-normal.png", "selectedIconPath": "assets/tabbar/category-selected.png" },
+      { "pagePath": "pages/designer/designer", "text": "设计", "iconPath": "assets/tabbar/design-normal.png", "selectedIconPath": "assets/tabbar/design-selected.png" },
+      { "pagePath": "pages/profile/profile", "text": "我的", "iconPath": "assets/tabbar/profile-normal.png", "selectedIconPath": "assets/tabbar/profile-selected.png" }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

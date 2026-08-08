@@ -1,0 +1,19 @@
+{
+  "name": "purun-clothing-platform",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server/server.mjs",
+    "test": "node server/test.mjs",
+    "build:image-index": "node scripts/build-image-search-index.mjs",
+    "maintenance": "node scripts/daily-maintenance.mjs"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "sharp": "0.35.3",
+    "xlsx": "0.18.5"
+  }
+}

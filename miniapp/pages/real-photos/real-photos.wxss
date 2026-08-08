@@ -1,0 +1,34 @@
+.real-page { padding-bottom: calc(150rpx + env(safe-area-inset-bottom)); }
+.real-header { padding: 35rpx 28rpx 26rpx; }
+.real-header > text:first-child { color: #b48b3f; font-size: 18rpx; letter-spacing: 4rpx; }
+.real-header view { margin-top: 9rpx; font-size: 35rpx; font-weight: 900; }
+.real-header > text:last-child { display: block; margin-top: 8rpx; color: #8d887f; font-size: 22rpx; }
+.photo-tabs { position: sticky; top: 0; z-index: 3; width: 100%; border-top: 1rpx solid #eeeae2; box-shadow: 0 8rpx 24rpx rgba(48,42,30,.05); white-space: nowrap; }
+.photo-tab-row { display: inline-flex; padding: 18rpx 22rpx; }
+.photo-tab { margin-right: 12rpx; padding: 12rpx 24rpx; border-radius: 28rpx; background: #f2f0eb; color: #777269; font-size: 22rpx; }
+.photo-tab.active { background: #244f3d; color: white; font-weight: 800; }
+.photo-meta { display: flex; justify-content: space-between; padding: 24rpx 24rpx 14rpx; color: #8f8a81; font-size: 21rpx; }
+.photo-meta text:first-child { color: #24231f; font-size: 29rpx; font-weight: 900; }
+.photo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16rpx; padding: 0 20rpx; }
+.photo-card { overflow: hidden; border-radius: 16rpx; box-shadow: 0 8rpx 24rpx rgba(43,37,27,.06); }
+.photo-card-image { width: 100%; height: 290rpx; background: #ece9e2; }
+.photo-card-meta { display: flex; justify-content: space-between; padding: 16rpx 14rpx 12rpx; }
+.photo-card-meta text:first-child { color: #4f5f52; font-size: 21rpx; font-weight: 800; }
+.photo-card-meta text:last-child { color: #aaa59d; font-size: 17rpx; }
+.photo-design-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 12rpx 12rpx;
+  padding: 13rpx 16rpx;
+  border-radius: 12rpx;
+  background: #244f3d;
+  color: #fff;
+}
+.photo-design-button text:first-child { font-size: 20rpx; font-weight: 700; }
+.photo-design-button text:last-child { font-size: 24rpx; }
+.photo-empty { padding: 150rpx 0; text-align: center; color: #aaa59b; }
+.photo-more { padding: 26rpx 0; text-align: center; color: #aaa59b; font-size: 21rpx; }
+.subpage-first-frame { position: fixed; z-index: 12; right: 0; bottom: 0; left: 0; padding: 16rpx 20rpx; background: #f3f0e9; pointer-events: none; }
+.subpage-first-block { height: 170rpx; border-radius: 20rpx; background: #fff; }
+.subpage-first-grid { height: 620rpx; margin-top: 16rpx; border-radius: 20rpx; background: #e9e5dc; }

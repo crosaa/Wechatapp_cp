@@ -1,0 +1,52 @@
+<view class="page-navigation page-navigation--sticky" style="padding-top: {{pageNavigation.statusBarHeight}}rpx;">
+  <view class="page-navigation__bar" style="height: {{pageNavigation.navigationBarHeight}}rpx;">
+    <view class="page-navigation__back" bindtap="goBack" aria-label="返回">
+      <view class="page-navigation__back-icon"></view>
+    </view>
+    <text class="page-navigation__title">商品详情</text>
+  </view>
+</view>
+<view class="subpage-first-frame" wx:if="{{!pageReady}}" style="top: {{pageNavigation.statusBarHeight + pageNavigation.navigationBarHeight}}rpx;">
+  <view class="subpage-first-hero"></view>
+  <view class="subpage-first-block"></view>
+</view>
+<view class="page detail-page">
+  <view class="detail-hero surface">
+    <stable-image class="detail-hero-image" src="{{product.imageDisplay}}" mode="aspectFill" data-url="{{product.image}}" bind:imagetap="previewImage" show-menu-by-longpress="{{true}}" />
+    <view class="detail-hero-copy">
+      <text>{{product.code}}</text>
+      <view>{{product.name}}</view>
+      <text class="detail-location" wx:if="{{product.subtitle}}">货位：{{product.subtitle}}</text>
+    </view>
+  </view>
+
+  <view class="detail-intro surface">
+    <view class="detail-heading"><text>PRODUCT STORY</text><view>商品详情</view></view>
+    <view class="detail-text">{{product.detailText || '暂无商品详情'}}</view>
+    <view class="detail-points">
+      <view><text>01</text><view><text class="point-title">面料品质</text><text class="point-note">{{product.fabric}}</text></view></view>
+      <view><text>02</text><view><text class="point-title">适用风格</text><text class="point-note">{{product.style}}</text></view></view>
+      <view><text>03</text><view><text class="point-title">团体定制</text><text class="point-note">支持刺绣与印花</text></view></view>
+    </view>
+  </view>
+
+  <view class="detail-gallery-title"><text>DETAIL GALLERY</text><view>详情长图</view></view>
+  <view class="detail-gallery surface">
+    <image wx:for="{{product.detailSlides}}" wx:key="original" src="{{item.display}}" mode="widthFix" data-url="{{item.original}}" bindtap="previewImage" show-menu-by-longpress="{{true}}" lazy-load="{{true}}" fade-in="{{false}}" />
+    <view wx:if="{{!product.detailImages.length}}" class="detail-empty">后台暂未上传详情长图</view>
+    <view wx:elif="{{product.detailSlides.length < product.detailImageCount}}" class="detail-loading">继续下滑加载剩余图片</view>
+  </view>
+
+  <view class="detail-spec surface">
+    <view><text>品类</text><text class="spec-value">{{product.displayCategory || product.category}}</text></view>
+    <view><text>面料</text><text class="spec-value">{{product.fabric}}</text></view>
+    <view><text>可选颜色</text><text class="spec-value">{{product.colors.length}} 种</text></view>
+  </view>
+</view>
+<view class="subpage-bottom-bar">
+  <view class="subpage-home" bindtap="goHome">
+    <image src="/assets/tabbar/home-normal.png" mode="aspectFit" />
+    <text>首页</text>
+  </view>
+  <button class="subpage-return" bindtap="goBack">返回商品</button>
+</view>

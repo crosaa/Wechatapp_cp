@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="description" content="普润制衣团购仓，提供企业团购、工作服展示与服装定制服务。">
+  <title>普润制衣团购仓</title>
+  <link rel="icon" href="/images/purun-favicon.png" type="image/png">
+  <style>
+    :root { color-scheme: light; --green:#16372b; --gold:#c78b1f; --paper:#fbf7ef; --ink:#17201c; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; color: var(--ink); background: var(--paper); }
+    .shell { min-height: 100vh; display: flex; flex-direction: column; }
+    header { display: flex; align-items: center; gap: 14px; padding: 22px clamp(22px,6vw,80px); background: var(--green); color: #fff; }
+    header img { width: 58px; height: 58px; padding: 6px; border-radius: 14px; background: #fff; }
+    .brand strong { display: block; font-size: 24px; letter-spacing: 1px; }
+    .brand span { display: block; margin-top: 5px; color: #c9d7d0; font-size: 14px; }
+    main { flex: 1; display: grid; place-items: center; padding: 58px 22px; }
+    .content { width: min(960px,100%); }
+    .eyebrow { color: var(--gold); font-size: 13px; font-weight: 700; letter-spacing: 4px; }
+    h1 { max-width: 760px; margin: 14px 0 18px; font-size: clamp(36px,7vw,70px); line-height: 1.12; }
+    .intro { max-width: 720px; color: #59635e; font-size: 18px; line-height: 1.9; }
+    .services { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; margin-top: 42px; }
+    .service { padding: 24px; border: 1px solid #e6ddcf; border-radius: 18px; background: rgba(255,255,255,.72); }
+    .service b { display: block; color: var(--green); font-size: 19px; }
+    .service span { display: block; margin-top: 9px; color: #777f7b; line-height: 1.65; }
+    footer { padding: 20px 22px; border-top: 1px solid #e6ddcf; color: #6c746f; text-align: center; font-size: 13px; line-height: 1.8; }
+    footer a { color: #59635e; text-decoration: none; }
+    @media (max-width: 680px) { .services { grid-template-columns: 1fr; } main { padding-top: 42px; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <img src="/images/purun-favicon.png" alt="普润制衣团购仓标志">
+      <div class="brand"><strong>普润制衣团购仓</strong><span>企业团购与服装定制</span></div>
+    </header>
+    <main>
+      <section class="content">
+        <div class="eyebrow">WHOLESALE · CUSTOM</div>
+        <h1>企业团购、工作服展示与服装定制</h1>
+        <p class="intro">普润制衣团购仓专注企业、团队及门店的服装团购服务，提供工作服产品展示、现货信息查询和个性化定制方案。</p>
+        <div class="services">
+          <div class="service"><b>企业团购</b><span>面向企业及团队提供多品类服装团购服务。</span></div>
+          <div class="service"><b>工作服展示</b><span>展示工作服款式、颜色、尺码及库存信息。</span></div>
+          <div class="service"><b>服装定制</b><span>支持团队服装图案设计、印制与刺绣需求。</span></div>
+        </div>
+      </section>
+    </main>
+    <footer>
+      <div>主办单位：西安市新城区普润劳保用品行（个体工商户）</div>
+      <div><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">陕ICP备2024029868号-2</a></div>
+    </footer>
+  </div>
+</body>
+</html>

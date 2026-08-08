@@ -1,0 +1,100 @@
+<view class="page-navigation page-navigation--sticky" style="padding-top: {{pageNavigation.statusBarHeight}}rpx;">
+  <view class="page-navigation__bar" style="height: {{pageNavigation.navigationBarHeight}}rpx;">
+    <view class="page-navigation__back" bindtap="goBack" aria-label="返回">
+      <view class="page-navigation__back-icon"></view>
+    </view>
+    <text class="page-navigation__title">商品详情</text>
+  </view>
+</view>
+<view class="page product-page">
+  <view class="gallery surface">
+    <swiper class="gallery-swiper" current="{{galleryCurrent}}" indicator-dots="{{selectedGallery.length > 1}}" indicator-color="rgba(0,0,0,.2)" indicator-active-color="#d49a2e" bindchange="onGalleryChange">
+      <swiper-item wx:for="{{selectedGallerySlides}}" wx:key="original">
+        <stable-image class="gallery-image" src="{{item.src}}" mode="aspectFit" data-url="{{item.original}}" bind:imagetap="previewGalleryImage" show-menu-by-longpress="{{true}}" />
+      </swiper-item>
+    </swiper>
+    <view class="gallery-loading" wx:if="{{!selectedGallery.length}}">正在打开商品…</view>
+    <view class="gallery-action-tip" wx:if="{{selectedGallery.length}}">点击打开 · 长按保存或转发</view>
+    <view class="gallery-label" wx:if="{{selectedGallery.length}}">{{galleryLabel}} · {{galleryCurrent + 1}}/{{selectedGallery.length}}</view>
+  </view>
+
+  <view class="product-summary surface">
+    <view class="summary-top">
+      <view><text class="price-symbol">¥</text><text class="summary-price">{{displayPrice}}</text><text class="special-price-note" wx:if="{{specialPriceActive}}">特殊尺码价</text></view>
+      <view class="action-row {{productReady ? '' : 'summary-placeholder'}}">
+        <view class="action-item" bindtap="savePoster"><text>▧</text><view>海报</view></view>
+      </view>
+    </view>
+    <view class="product-title">{{product.name}}</view>
+    <view class="product-location {{product.subtitle ? '' : 'summary-placeholder'}}"><text>货位</text><strong>{{product.subtitle || '待加载'}}</strong></view>
+    <view class="inventory-row {{productReady ? '' : 'summary-placeholder'}}">
+      <view wx:if="{{displayStock === 0}}" class="inventory-pill out">当前颜色暂时缺货</view>
+      <view wx:elif="{{displayStock <= 10}}" class="inventory-pill low">当前颜色库存紧张：仅剩 {{displayStock}}</view>
+      <view wx:else class="inventory-pill">当前颜色现货库存：{{displayStock}}</view>
+      <text>库存与管理后台同步</text>
+    </view>
+    <view class="tag-row" wx:if="{{product.badge && product.badge !== '热销' && product.badge !== '定制'}}"><text>{{product.badge}}</text></view>
+  </view>
+
+  <view class="product-loading-card surface" wx:if="{{!productReady}}">
+    <view class="product-loading-dot"></view>
+    <text>{{loadError ? '商品资料加载失败，请返回重试' : '正在加载颜色、尺码和库存…'}}</text>
+  </view>
+
+  <block wx:if="{{productReady}}">
+  <view class="option-card surface">
+    <view class="option-label">颜色 <text>已选 {{selectedColor}}</text></view>
+    <view class="choice-row">
+      <view class="choice {{selectedColor === item ? 'choice-active' : ''}}" wx:for="{{product.colors}}" wx:key="*this" data-value="{{item}}" bindtap="selectColor">{{item}}</view>
+    </view>
+    <view class="option-label size-label">尺码 <text>{{selectedSize ? '已选 ' + selectedSize : '暂无可选尺码'}}</text></view>
+    <view class="choice-row">
+      <view class="choice size {{selectedSize === item.name ? 'choice-active' : ''}} {{item.stock === 0 ? 'choice-disabled' : ''}}" wx:for="{{product.sizeOptions}}" wx:key="name" data-value="{{item.name}}" data-stock="{{item.stock}}" bindtap="selectSize">
+        <text class="size-name">{{item.name}}</text>
+        <text class="size-stock {{selectedSize === item.name ? 'active' : ''}} {{item.stock === 0 ? 'disabled' : ''}}">{{item.stockLabel}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="content-entry-card surface">
+    <view class="content-entry" bindtap="goDetailPage">
+      <view class="entry-icon detail">详</view>
+      <view class="entry-copy"><text>商品详情</text><text>点击后逐张翻看 · {{product.detailImageCount || 0}} 张</text></view>
+      <text class="entry-arrow">›</text>
+    </view>
+    <view class="content-entry" bindtap="goRealPhotos">
+      <view class="entry-icon real">实</view>
+      <view class="entry-copy"><text>实拍图</text><text>按分类逐张翻看 · {{product.realImageCount || 0}} 张</text></view>
+      <text class="entry-arrow">›</text>
+    </view>
+  </view>
+
+  <view class="info-card surface">
+    <view class="info-title">商品信息 <text>PRODUCT INFO</text></view>
+    <view class="info-grid">
+      <view><text>品类</text><text>{{product.displayCategory || product.category}}</text></view>
+      <view><text>面料</text><text>{{product.fabric}}</text></view>
+      <view><text>风格</text><text>{{product.style}}</text></view>
+      <view><text>版型</text><text>{{product.fit}}</text></view>
+    </view>
+  </view>
+
+  <view class="feature-card surface" wx:if="{{featureItems.length}}">
+    <view class="feature-grid">
+      <view wx:for="{{featureItems}}" wx:key="name"><text class="feature-icon">{{item.icon}}</text><text>{{item.name}}</text></view>
+    </view>
+  </view>
+  </block>
+
+  <view class="bottom-space"></view>
+</view>
+<view class="product-bottom-bar">
+  <view class="home-button" bindtap="goHome">
+    <image class="home-icon" src="/assets/tabbar/home-normal.png" mode="aspectFit" />
+    <text>首页</text>
+  </view>
+  <button class="design-button" bindtap="goDesigner">
+    <text>用这款开始设计</text>
+    <text class="design-arrow">→</text>
+  </button>
+</view>

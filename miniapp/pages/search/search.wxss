@@ -1,0 +1,40 @@
+.search-page-shell { min-height: 100vh; background: #f4f1eb; }
+.search-page { padding: 20rpx 20rpx 40rpx; }
+.search-workbench { padding: 18rpx 0 16rpx; border-radius: 24rpx; box-shadow: 0 10rpx 28rpx rgba(55,46,30,.06); }
+.dedicated-search { height: 82rpx; margin: 0 18rpx; padding-right: 10rpx; background: #f5f3ef; box-shadow: none; }
+.dedicated-search .search-input { height: 100%; }
+.keyword-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56rpx;
+  height: 56rpx;
+  color: #9b978f;
+  font-size: 36rpx;
+  line-height: 56rpx;
+}
+.search-submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 60rpx;
+  padding: 0 24rpx;
+  border-radius: 30rpx;
+  background: #d99a21;
+  color: #fff;
+  font-size: 23rpx;
+  font-weight: 700;
+}
+.search-scope { margin-top: 13rpx; padding: 0 34rpx; color: #9a958b; font-size: 20rpx; }
+.history-card { margin-top: 18rpx; overflow: hidden; border-radius: 24rpx; box-shadow: 0 10rpx 28rpx rgba(55,46,30,.05); }
+.history-header { display: flex; align-items: center; justify-content: space-between; padding: 26rpx 28rpx 20rpx; border-bottom: 1rpx solid #eee9df; }
+.history-title { color: #25241f; font-size: 29rpx; font-weight: 800; }
+.history-subtitle { margin-top: 5rpx; color: #a09a90; font-size: 19rpx; }
+.history-clear { padding: 12rpx 0 12rpx 20rpx; color: #a87822; font-size: 22rpx; }
+.history-list { padding: 0 28rpx; }
+.history-item { display: flex; align-items: center; min-height: 82rpx; border-bottom: 1rpx solid #f0ece4; }
+.history-item:last-child { border-bottom: 0; }
+.history-icon { width: 45rpx; color: #aaa49a; font-size: 23rpx; }
+.history-keyword { flex: 1; overflow: hidden; color: #47443e; font-size: 25rpx; white-space: nowrap; text-overflow: ellipsis; }
+.history-arrow { margin-left: 16rpx; color: #bbb5aa; font-size: 34rpx; }
+.history-empty { padding: 86rpx 20rpx; color: #aaa49a; font-size: 23rpx; text-align: center; }

@@ -1,0 +1,48 @@
+<view class="search-page-shell">
+  <view class="page-navigation page-navigation--sticky" style="padding-top: {{pageNavigation.statusBarHeight}}rpx;">
+    <view class="page-navigation__bar" style="height: {{pageNavigation.navigationBarHeight}}rpx;">
+      <view class="page-navigation__back" bindtap="goBack" aria-label="返回">
+        <view class="page-navigation__back-icon"></view>
+      </view>
+      <text class="page-navigation__title">商品搜索</text>
+    </view>
+  </view>
+
+  <view class="search-page">
+    <view class="search-workbench surface">
+      <view class="search-box dedicated-search">
+        <text class="search-icon">⌕</text>
+        <input
+          class="search-input"
+          value="{{keyword}}"
+          focus="{{inputFocused}}"
+          bindinput="onKeyword"
+          bindconfirm="submitSearch"
+          confirm-type="search"
+          placeholder="输入款号、商品名称、品类或面料"
+        />
+        <view class="keyword-clear" wx:if="{{keyword}}" bindtap="clearKeyword" aria-label="清空输入">×</view>
+        <view class="search-submit" bindtap="submitSearch">搜索</view>
+      </view>
+      <view class="search-scope">默认搜索全部已上架商品</view>
+    </view>
+
+    <view class="history-card surface">
+      <view class="history-header">
+        <view>
+          <view class="history-title">最近搜索</view>
+          <view class="history-subtitle">本机保留最近 20 条，不需要登录</view>
+        </view>
+        <view class="history-clear" wx:if="{{searchHistory.length}}" bindtap="clearHistory">清空记录</view>
+      </view>
+      <view class="history-list" wx:if="{{searchHistory.length}}">
+        <view class="history-item" wx:for="{{searchHistory}}" wx:key="*this" data-keyword="{{item}}" bindtap="useSearchHistory">
+          <text class="history-icon">⌕</text>
+          <text class="history-keyword">{{item}}</text>
+          <text class="history-arrow">›</text>
+        </view>
+      </view>
+      <view class="history-empty" wx:else>还没有搜索记录</view>
+    </view>
+  </view>
+</view>

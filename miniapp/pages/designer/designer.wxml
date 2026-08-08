@@ -1,0 +1,191 @@
+<view class="page-navigation" style="padding-top: {{pageNavigation.statusBarHeight}}rpx;">
+  <view class="page-navigation__bar" style="height: {{pageNavigation.navigationBarHeight}}rpx;">
+    <text class="page-navigation__title">定制设计</text>
+  </view>
+</view>
+
+<view class="designer-page">
+  <view class="designer-toolbar">
+    <view class="tool-left">
+      <view class="tool-pill" bindtap="createNew">＋ 新建</view>
+      <view class="tool-pill" bindtap="chooseStyle">换款式</view>
+      <view class="tool-pill {{canUndo ? '' : 'disabled'}}" bindtap="undo">↶ 撤销</view>
+    </view>
+    <view class="tool-right">
+      <view class="save-status {{dirty ? 'dirty' : ''}}">{{dirty ? '未保存' : lastSavedText}}</view>
+      <view class="tool-text" bindtap="saveDraft">保存</view>
+      <view class="tool-help" bindtap="showHelp">?</view>
+    </view>
+  </view>
+
+  <view class="product-context">
+    <view class="product-context-copy">
+      <text>{{product.code || '当前款式'}}</text>
+      <view>{{product.name}}</view>
+    </view>
+    <view class="source-state">{{loadingProduct ? '同步商品中…' : designSourceType}}</view>
+  </view>
+
+  <view class="design-stage">
+    <view class="stage-tag">{{designSourceType}} · {{face}}</view>
+    <view class="stage-tip">点击图层选中 · 拖动移动 · 双指缩放</view>
+    <movable-area class="design-canvas">
+      <image class="garment-image {{face === '背面' ? 'back-view' : ''}}" src="{{garmentImage}}" mode="aspectFit" />
+
+      <movable-view
+        wx:if="{{overlayImage}}"
+        class="movable-layer image-layer {{selectedLayer === 'image' ? 'selected' : ''}}"
+        direction="all"
+        x="{{imageX}}"
+        y="{{imageY}}"
+        scale="{{true}}"
+        scale-value="{{imageScale}}"
+        scale-min="0.4"
+        scale-max="2.2"
+        out-of-bounds="{{false}}"
+        data-layer="image"
+        catchtap="selectLayer"
+        bindtouchstart="beginLayerGesture"
+        bindtouchend="endLayerGesture"
+        bindchange="onImageMove"
+        bindscale="onImageScale"
+      >
+        <image class="uploaded-overlay" src="{{overlayImage}}" mode="aspectFit" style="transform: rotate({{imageRotation}}deg);" />
+        <view class="layer-label">图案</view>
+      </movable-view>
+
+      <movable-view
+        wx:if="{{textVisible}}"
+        class="movable-layer text-layer {{selectedLayer === 'text' ? 'selected' : ''}}"
+        direction="all"
+        x="{{textX}}"
+        y="{{textY}}"
+        scale="{{true}}"
+        scale-value="{{textScale}}"
+        scale-min="0.5"
+        scale-max="2"
+        out-of-bounds="{{false}}"
+        data-layer="text"
+        catchtap="selectLayer"
+        bindtouchstart="beginLayerGesture"
+        bindtouchend="endLayerGesture"
+        bindchange="onTextMove"
+        bindscale="onTextScale"
+      >
+        <view class="design-overlay" style="color: {{textColor}}; font-size: {{textFontSize}}rpx; transform: rotate({{textRotation}}deg);">{{overlayText}}</view>
+        <view class="layer-label">文字</view>
+      </movable-view>
+    </movable-area>
+  </view>
+
+  <view class="face-row">
+    <view class="face-tab {{face === '正面' ? 'active' : ''}}" data-face="正面" bindtap="setFace"><text>正面</text><text class="face-note">独立设计</text></view>
+    <view class="copy-face-action" bindtap="copyCurrentFace"><text>⇄</text><view>复制到{{face === '正面' ? '背面' : '正面'}}</view></view>
+    <view class="face-tab {{face === '背面' ? 'active' : ''}}" data-face="背面" bindtap="setFace"><text>背面</text><text class="face-note">独立设计</text></view>
+  </view>
+
+  <view class="base-image-section" wx:if="{{baseImageOptions.length}}">
+    <view class="base-image-head"><text>选择设计底图</text><text>共 {{baseImageCount}} 张 · 左右滑动</text></view>
+    <scroll-view class="base-image-scroll" scroll-x="{{true}}" show-scrollbar="{{false}}" enhanced="{{true}}" lower-threshold="180" bindscrolltolower="loadMoreBaseImages">
+      <view class="base-image-list">
+        <view
+          class="base-image-item {{garmentImage === item.url ? 'active' : ''}}"
+          wx:for="{{baseImageOptions}}"
+          wx:key="url"
+          data-url="{{item.url}}"
+          data-label="{{item.label}}"
+          data-color="{{item.color}}"
+          bindtap="selectBaseImage"
+        >
+          <stable-image class="base-image-thumb" src="{{item.displayUrl}}" mode="aspectFill" lazy-load="{{true}}" data-url="{{item.url}}" data-label="{{item.label}}" data-color="{{item.color}}" bind:imagetap="selectBaseImage" />
+          <text>{{item.label}}</text>
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+
+  <scroll-view class="product-color-row" scroll-x="{{true}}" show-scrollbar="{{false}}" wx:if="{{productColors.length}}">
+    <view class="product-color-inner">
+      <text class="control-title">商品颜色</text>
+      <view class="product-color-chip {{selectedProductColor === item ? 'active' : ''}}" wx:for="{{productColors}}" wx:key="*this" data-color="{{item}}" bindtap="selectProductColor">{{item}}</view>
+    </view>
+  </scroll-view>
+
+  <view class="layer-control-card">
+    <view class="layer-control-head">
+      <view>
+        <text>当前图层</text>
+        <text class="current-layer-name">{{selectedLayer === 'image' ? '上传图案' : '定制文字'}}</text>
+      </view>
+      <view class="layer-head-actions">
+        <text bindtap="resetSelectedLayer">复位</text>
+        <text wx:if="{{selectedLayer === 'image' && overlayImage}}" class="danger" bindtap="removeOverlayImage">删除图案</text>
+        <text wx:if="{{selectedLayer === 'text'}}" bindtap="toggleTextVisibility">{{textVisible ? '隐藏文字' : '显示文字'}}</text>
+      </view>
+    </view>
+
+    <view class="control-row">
+      <text>大小</text>
+      <slider
+        min="50"
+        max="200"
+        step="5"
+        value="{{selectedLayer === 'image' ? imageScale * 100 : textScale * 100}}"
+        activeColor="#d39a2d"
+        backgroundColor="#dedbd4"
+        block-size="18"
+        bindchange="onLayerScaleChange"
+      />
+      <text>{{selectedLayer === 'image' ? imageScale * 100 : textScale * 100}}%</text>
+    </view>
+
+    <view class="control-row">
+      <text>角度</text>
+      <slider
+        min="-180"
+        max="180"
+        step="5"
+        value="{{selectedLayer === 'image' ? imageRotation : textRotation}}"
+        activeColor="#d39a2d"
+        backgroundColor="#dedbd4"
+        block-size="18"
+        bindchange="onLayerRotationChange"
+      />
+      <text>{{selectedLayer === 'image' ? imageRotation : textRotation}}°</text>
+    </view>
+
+    <view class="text-controls" wx:if="{{selectedLayer === 'text'}}">
+      <view class="control-row">
+        <text>字号</text>
+        <slider min="20" max="60" step="2" value="{{textFontSize}}" activeColor="#d39a2d" backgroundColor="#dedbd4" block-size="18" bindchange="onTextSize" />
+        <text>{{textFontSize}}</text>
+      </view>
+      <scroll-view class="palette-scroll" scroll-x="{{true}}" show-scrollbar="{{false}}">
+        <view class="palette-row">
+          <text>文字颜色</text>
+          <view class="color-dot {{textColor === item ? 'selected' : ''}}" wx:for="{{themeColors}}" wx:key="*this" data-color="{{item}}" bindtap="pickColor" style="background: {{item}};"></view>
+        </view>
+      </scroll-view>
+    </view>
+  </view>
+
+  <view class="floating-panel text-panel" wx:if="{{showTextPanel}}">
+    <view class="floating-panel-title"><text class="panel-title-name">编辑文字</text><text bindtap="toggleTextPanel">×</text></view>
+    <input value="{{draftText}}" bindinput="onDraft" maxlength="20" placeholder="输入团队名称或宣传语" focus="{{true}}" />
+    <button bindtap="applyText">应用文字</button>
+  </view>
+
+  <view class="floating-panel preset-panel" wx:if="{{showPresetPanel}}">
+    <view class="floating-panel-title"><text class="panel-title-name">常用素材文字</text><text bindtap="togglePresetPanel">×</text></view>
+    <view class="preset-grid">
+      <view wx:for="{{textPresets}}" wx:key="*this" data-text="{{item}}" bindtap="choosePreset">{{item}}</view>
+    </view>
+  </view>
+
+  <view class="designer-bottom safe-bottom">
+    <view class="designer-action" bindtap="togglePresetPanel"><text>◇</text><view>素材</view></view>
+    <view class="designer-action" bindtap="chooseImage"><text>▣</text><view>{{overlayImage ? '换图' : '上传'}}</view></view>
+    <view class="designer-action" bindtap="toggleTextPanel"><text>T</text><view>文字</view></view>
+    <button class="finish-button" bindtap="finish"><text>✓</text> 完成设计</button>
+  </view>
+</view>

@@ -1,0 +1,30 @@
+<view class="page-navigation" style="padding-top: {{pageNavigation.statusBarHeight}}rpx;">
+  <view class="page-navigation__bar" style="height: {{pageNavigation.navigationBarHeight}}rpx;">
+    <text class="page-navigation__title">我的</text>
+  </view>
+</view>
+<view class="profile-page page layout-{{settings.profileLayout}}">
+  <view class="profile-hero">
+    <stable-image wx:if="{{settings.storeIcon}}" class="profile-logo" src="{{settings.storeIcon}}" mode="aspectFill" />
+    <view wx:else class="profile-mark">{{storeInitial}}</view>
+    <view class="profile-copy">
+      <view class="profile-store">{{settings.storeName}}</view>
+      <view class="profile-name">{{settings.profileTitle}}</view>
+      <view class="profile-desc">{{settings.profileSubtitle}}</view>
+    </view>
+  </view>
+
+  <view class="profile-card surface">
+    <view class="profile-card-title">{{settings.serviceTitle}}</view>
+    <view class="service-grid">
+      <view wx:for="{{serviceItems}}" wx:key="name"><text class="service-icon">{{item.icon}}</text><text>{{item.name}}</text></view>
+    </view>
+  </view>
+
+  <view class="about-card surface" wx:if="{{settings.aboutText}}">
+    <view class="profile-card-title">{{settings.profileAboutTitle}}</view>
+    <text>{{settings.aboutText}}</text>
+  </view>
+
+  <view class="profile-foot">{{settings.storeName}} · {{settings.footerText}}</view>
+</view>

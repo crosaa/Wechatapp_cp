@@ -1,0 +1,36 @@
+# Dependencies and local environment
+node_modules/
+.env
+.env.*
+!.env.example
+npm-debug.log*
+
+# Editor and machine-specific settings
+project.private.config.json
+.agents/
+
+# Codex/deployment scratch files and generated reports
+.tmp/
+outputs/
+server/inventory-reports/
+scripts/cpfst-sync/__pycache__/
+scripts/cpfst-sync/*.log
+*.py[cod]
+
+# Runtime database, generated indexes, and backups
+server/data/*.db
+server/data/*.db-*
+server/data/**/*.db
+server/data/**/*.db-*
+server/data/image-search-index.json
+server/data/image-search-index.json.tmp
+
+# User-uploaded media is runtime data, not source code
+server/uploads/*
+!server/uploads/.gitkeep
+
+# Local process state
+server/server.pid
+server/server.log
+server/server-error.log
+*.pid

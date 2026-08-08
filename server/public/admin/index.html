@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>普润制衣团购仓 · 商品管理</title>
+  <link rel="icon" type="image/png" sizes="64x64" href="/images/purun-favicon.png?v=20260724-logo1" />
+  <link rel="stylesheet" href="/admin/styles.css?v=20260730-hidden-operation-scrollbar1" />
+</head>
+<body>
+  <section class="login-screen" id="loginScreen">
+    <div class="login-card">
+      <div class="brand-mark"><img src="/images/purun-gold-drop-logo.png" alt="普润制衣团购仓图标" data-admin-store-icon /></div>
+      <p class="eyebrow">PURUN ADMIN</p>
+      <h1>商品管理后台</h1>
+      <p class="login-note">管理商品资料、展示图片和上下架状态</p>
+      <form id="loginForm">
+        <label for="username">管理账号</label>
+        <input id="username" type="text" autocomplete="username" maxlength="32" placeholder="请输入管理账号" required />
+        <label for="password">管理密码</label>
+        <input id="password" type="password" autocomplete="current-password" placeholder="请输入管理密码" required />
+        <button class="primary-button full" type="submit">进入后台</button>
+        <p class="form-message" id="loginMessage"></p>
+      </form>
+    </div>
+    <footer class="site-compliance-footer login-compliance">
+      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">陕ICP备2024029868号-2</a>
+    </footer>
+  </section>
+
+  <div class="app-shell is-hidden" id="appShell">
+    <aside class="sidebar">
+      <div class="sidebar-brand"><span><img src="/images/purun-gold-drop-logo.png" alt="普润制衣团购仓图标" data-admin-store-icon /></span><div><strong data-admin-store-name>普润制衣团购仓</strong><small>商品运营中心</small></div></div>
+      <nav>
+        <a class="nav-item active" href="#products"><span>▦</span>商品管理</a>
+        <a class="nav-item" href="#inventory-mappings"><span>⇄</span>库存对应</a>
+        <a class="nav-item" href="#homepage"><span>⌂</span>首页展示</a>
+        <a class="nav-item" href="#categories"><span>▤</span>分类管理</a>
+        <a class="nav-item" href="#media"><span>▧</span>素材中心</a>
+        <a class="nav-item" href="#settings"><span>⚙</span>店铺设置</a>
+        <a class="nav-item owner-only is-hidden" href="#accounts"><span>♙</span>账号管理</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <span class="status-dot"></span> 系统服务运行中
+        <small id="currentAdminLabel"></small>
+        <button id="logoutButton">退出登录</button>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <section class="operation-page-tabs-shell" aria-label="已打开的操作页面">
+        <div class="operation-page-tabs-label"><span>操作页面</span><small>点击左侧功能可打开新标签</small></div>
+        <div class="operation-page-tabs" id="operationPageTabs" role="tablist"></div>
+      </section>
+      <aside class="runtime-sync-banner">
+        <div><strong>日常运营无需重新编译小程序</strong><span>新增商品、修改资料、上下架、分类、轮播图、商品图片和库存都从服务器实时读取。</span></div>
+        <small>后台只要有操作并保存成功就会同步更新；已打开小程序的顾客继续操作、切换页面或返回页面即可看到最新内容。</small>
+        <label class="image-upload-policy"><span>图片上传处理</span><select id="imageUploadModeSelect"><option value="auto">自动优化（推荐）</option><option value="original">保留原图</option></select><em id="imageUploadModeHint">按上传位置自动调整像素和体积</em></label>
+      </aside>
+      <header class="topbar admin-page is-active" data-admin-page="products">
+        <div>
+          <p class="eyebrow">PRODUCT OPERATIONS</p>
+          <h1>商品管理</h1>
+          <p>编辑小程序展示内容，控制商品发布状态</p>
+        </div>
+        <div class="topbar-actions">
+          <a class="secondary-button excel-action" href="/admin/templates/product-inventory-template.xlsx" download="普润制衣团购仓_颜色尺码库存导入模板.xlsx"><span>↓</span> 下载库存模板</a>
+          <button class="secondary-button excel-action" id="latestUnmatchedReportButton" type="button" title="下载最近一次覆盖导入生成的未匹配产品表"><span>↓</span> 未匹配表格</button>
+          <label class="secondary-button excel-action" title="简洁模板需填写款号、颜色、尺码和数量；也支持含商品名称、型号、数量、产地的大库统计表"><span>↑</span> 覆盖导入库存<input id="inventoryExcelInput" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden /></label>
+          <button class="primary-button" id="newProductButton"><span>＋</span> 新增商品</button>
+        </div>
+      </header>
+
+      <section class="stats-grid admin-page is-active" data-admin-page="products">
+        <article class="stat-card stat-primary"><span class="stat-label">全部商品</span><strong id="totalCount">0</strong><small>当前商品总数</small></article>
+        <article class="stat-card"><span class="stat-label">已上架</span><strong id="publishedCount">0</strong><small><i class="dot green"></i> 小程序中可见</small></article>
+        <article class="stat-card"><span class="stat-label">草稿</span><strong id="draftCount">0</strong><small><i class="dot amber"></i> 尚未对外展示</small></article>
+        <article class="stat-card"><span class="stat-label">颜色尺码预警</span><strong id="lowStockCount">0</strong><small><i class="dot red"></i> 有颜色尺码库存不超过 5</small></article>
+        <article class="stat-card"><span class="stat-label">商品分类</span><strong id="categoryCount">0</strong><small>正在使用的分类</small></article>
+      </section>
+
+      <section class="inventory-mapping-panel admin-page" id="inventory-mappings" data-admin-page="inventory-mappings">
+        <div class="inventory-mapping-head">
+          <div>
+            <p class="eyebrow">INVENTORY NAME MAPPING</p>
+            <h2>库存名称对应关系</h2>
+            <p>把库存 Excel 中的每个颜色名称分别对应到小程序数据库商品及具体颜色。保存后从下一次“覆盖导入库存”开始优先采用，不会修改当前库存。</p>
+          </div>
+          <div class="inventory-mapping-head-actions">
+            <button type="button" class="secondary-button" id="inventoryMappingDownload">↓ 下载未匹配 Excel</button>
+            <button type="button" class="primary-button" id="inventoryMappingRefresh">刷新最新明细</button>
+          </div>
+        </div>
+        <div class="inventory-mapping-summary">
+          <div><strong id="inventoryMappingSourceCount">—</strong><span>Excel 来源名称</span></div>
+          <div><strong id="inventoryMappingPendingCount">—</strong><span>待人工对应</span></div>
+          <div><strong id="inventoryMappingSavedCount">—</strong><span>已对应（自动 + 人工）</span></div>
+          <div><strong id="inventoryMappingProductCount">—</strong><span>数据库商品可选</span></div>
+          <p id="inventoryMappingReportMeta">点击“刷新最新明细”读取最近一次库存导入结果。</p>
+        </div>
+        <div class="inventory-mapping-notice">
+          <strong>对应规则</strong>
+          <span>同一“来源名称 + 来源内部编码”对应一个数据库商品和一个具体颜色。同款黑色、白色等可分别指向同一商品的不同颜色；随后继续按尺码写入，任何无法确认的颜色或尺码仍会保留在未匹配表中。</span>
+        </div>
+        <div class="inventory-mapping-toolbar">
+          <label class="search-control"><span>⌕</span><input id="inventoryMappingSearch" placeholder="搜索 Excel 名称、内部编码、候选商品或已对应商品" /></label>
+          <select id="inventoryMappingStatus">
+            <option value="all">全部（含已对应）</option>
+            <option value="unmapped">仅看未对应</option>
+            <option value="mapped">仅看已对应（含历史）</option>
+            <option value="manual">仅看人工对应</option>
+            <option value="automatic">仅看自动对应</option>
+          </select>
+          <select id="inventoryMappingReason">
+            <option value="all">全部未匹配原因</option>
+          </select>
+          <strong id="inventoryMappingVisibleCount">0 项</strong>
+        </div>
+        <div class="inventory-mapping-table-wrap">
+          <table class="inventory-mapping-table">
+            <thead>
+              <tr><th>库存 Excel 名称</th><th>本次未写入明细</th><th>当前对应</th><th>搜索并选择数据库商品</th><th>对应颜色</th><th>操作</th></tr>
+            </thead>
+            <tbody id="inventoryMappingRows"></tbody>
+          </table>
+          <div class="empty-state" id="inventoryMappingEmpty"><span>◇</span><h3>尚未读取库存名称</h3><p>请点击右上角“刷新最新明细”。</p></div>
+        </div>
+        <footer class="inventory-mapping-footer">
+          <button type="button" class="secondary-button" id="inventoryMappingPrevious">上一页</button>
+          <label class="pagination-page-selector" for="inventoryMappingPageSelect">
+            <span>第</span>
+            <select id="inventoryMappingPageSelect" aria-label="选择库存对应页码"><option value="1">1</option></select>
+            <span>/ <b id="inventoryMappingTotalPages">1</b> 页</span>
+          </label>
+          <button type="button" class="secondary-button" id="inventoryMappingNext">下一页</button>
+        </footer>
+      </section>
+
+      <section class="homepage-overview admin-page" id="homepage" data-admin-page="homepage">
+        <div class="homepage-overview-head">
+          <div><p class="eyebrow">MINI PROGRAM HOME</p><h2>首页展示内容</h2><p>完整显示小程序首页热门分类；所有分类采用相同规则并可自由调整位置。</p></div>
+          <span class="sync-label"><i class="dot green"></i>与小程序同步</span>
+        </div>
+        <div class="homepage-overview-grid">
+          <article class="homepage-content-card">
+            <div class="homepage-card-head"><div><h3>热门分类</h3><p>“当季上新”和其他分类完全相同，分类数量及分类下商品数量均不设上限</p></div><strong id="popularCategoryCount">0 个</strong></div>
+            <div class="popular-category-list" id="popularCategoryList"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="category-management-panel admin-page" id="categories" data-admin-page="categories">
+        <div class="category-management-head">
+          <div><p class="eyebrow">CATEGORY MANAGEMENT</p><h2>热门分类管理</h2><p>默认简洁显示分类摘要；需要时展开单个分类调整商品位置。</p></div>
+          <span class="sync-label"><i class="dot green"></i>分类数量不设上限</span>
+        </div>
+        <div class="category-create-bar"><div><strong>添加新分类</strong><span>新分类会添加到列表末尾，可继续上传图片并调整位置。</span></div><input id="newCategoryName" maxlength="30" placeholder="输入分类名称" /><button type="button" class="primary-button" id="addCategoryButton">＋ 添加分类</button></div>
+        <div class="category-management-list" id="categoryManagementList"></div>
+        <input id="categoryImageInput" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+        <p class="category-management-message" id="categoryManagementMessage" role="status"></p>
+      </section>
+
+      <section class="product-panel admin-page is-active" id="products" data-admin-page="products">
+        <div class="panel-toolbar">
+          <div>
+            <h2>商品目录</h2>
+            <p>最后保存的修改会立即同步给小程序接口</p>
+          </div>
+          <div class="toolbar-actions">
+            <div class="search-control"><span>⌕</span><input id="searchInput" placeholder="搜索款号或商品名称" /></div>
+            <select id="categoryFilter" aria-label="筛选分类"><option value="all">全部分类</option></select>
+            <select id="statusFilter" aria-label="筛选状态"><option value="all">全部状态</option><option value="published">已上架</option><option value="draft">草稿</option></select>
+            <select id="colorImageFilter" aria-label="筛选颜色图片对应状态"><option value="all">全部颜色图</option><option value="incomplete">颜色图待完善</option><option value="complete">颜色图已对应</option></select>
+          </div>
+        </div>
+        <div class="inventory-import-message is-hidden" id="inventoryImportMessage" role="status"></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>商品</th><th id="productSortHeader">全局排序</th><th>分类</th><th class="price-header">团购价</th><th>库存（颜色 / 尺码明细）</th><th class="align-right">操作</th><th>状态</th><th>更新时间</th></tr></thead>
+            <tbody id="productRows"></tbody>
+          </table>
+          <div class="empty-state is-hidden" id="emptyState"><span>◇</span><h3>没有匹配的商品</h3><p>调整筛选条件，或者创建一个新商品。</p></div>
+        </div>
+        <div class="product-horizontal-scroll is-hidden" id="productHorizontalScroll" aria-label="商品表格左右拖动条">
+          <div id="productHorizontalScrollSpacer"></div>
+        </div>
+        <footer class="product-pagination">
+          <strong id="productVisibleCount">共 0 款</strong>
+          <button type="button" class="secondary-button" id="productPrevious">上一页</button>
+          <label class="product-page-selector" for="productPageSelect">
+            <span>第</span>
+            <select id="productPageSelect" aria-label="选择商品页码"><option value="1">1</option></select>
+            <span>/ <b id="productTotalPages">1</b> 页</span>
+          </label>
+          <button type="button" class="secondary-button" id="productNext">下一页</button>
+        </footer>
+      </section>
+
+      <section class="media-management-panel admin-page" id="media" data-admin-page="media">
+        <div class="media-management-head">
+          <div>
+            <p class="eyebrow">PRODUCT MEDIA</p>
+            <h2>商品图片管理</h2>
+            <p>单独查看每款商品的主图、颜色图、详情图和实拍图完整情况；点击“编辑图片”进入对应商品。</p>
+          </div>
+          <span class="sync-label"><i class="dot green"></i>与商品资料同步</span>
+        </div>
+        <div class="media-management-toolbar">
+          <label class="search-control"><span>⌕</span><input id="mediaSearchInput" placeholder="搜索款号或商品名称" /></label>
+          <select id="mediaCompletenessFilter">
+            <option value="all">全部商品图片</option>
+            <option value="incomplete">仅看待完善</option>
+            <option value="complete">仅看已完整</option>
+          </select>
+          <strong id="mediaProductCount">0 款商品</strong>
+        </div>
+        <div class="media-product-grid" id="mediaProductGrid"></div>
+        <div class="empty-state is-hidden" id="mediaProductEmpty"><span>◇</span><h3>没有符合条件的商品</h3><p>请调整搜索或图片状态筛选。</p></div>
+        <footer class="media-management-footer">
+          <button type="button" class="secondary-button" id="mediaPrevious">上一页</button>
+          <label class="pagination-page-selector" for="mediaPageSelect">
+            <span>第</span>
+            <select id="mediaPageSelect" aria-label="选择素材中心页码"><option value="1">1</option></select>
+            <span>/ <b id="mediaTotalPages">1</b> 页</span>
+          </label>
+          <button type="button" class="secondary-button" id="mediaNext">下一页</button>
+        </footer>
+      </section>
+
+      <section class="account-management-panel admin-page" id="accounts" data-admin-page="accounts">
+        <div class="account-management-head">
+          <div>
+            <p class="eyebrow">ADMIN ACCOUNTS</p>
+            <h2>后台账号管理</h2>
+            <p>主管理员可以新建和删除普通管理员，并随时重置登录密码。</p>
+          </div>
+          <span class="sync-label"><i class="dot green"></i>密码加密保存</span>
+        </div>
+        <form class="account-create-card" id="createAdminForm">
+          <div>
+            <h3>新建普通管理员</h3>
+            <p>账号可以直接填写中文人名；名称不能为空且不能超过32个字符，密码至少6位。</p>
+          </div>
+          <label><span>登录账号</span><input id="newAdminUsername" autocomplete="off" maxlength="32" placeholder="例如 张三" required /></label>
+          <label><span>初始密码</span><input id="newAdminPassword" type="password" autocomplete="new-password" minlength="6" maxlength="128" placeholder="输入至少6位密码" required /></label>
+          <div class="account-create-actions">
+            <button type="button" class="secondary-button" id="generateAdminPassword">生成安全密码</button>
+            <button type="submit" class="primary-button">新建账号</button>
+          </div>
+          <p class="form-message" id="accountCreateMessage"></p>
+        </form>
+        <div class="account-list-card">
+          <div class="account-list-head"><div><h3>可登录账号</h3><p>旧密码无法查看；需要修改时，请直接设置新密码。</p></div><strong id="adminUserCount">0 个账号</strong></div>
+          <div class="account-table-wrap">
+            <table class="account-table">
+              <thead><tr><th>账号</th><th>权限</th><th>最近登录</th><th>重置密码</th><th>操作</th></tr></thead>
+              <tbody id="adminUserRows"></tbody>
+            </table>
+          </div>
+          <div class="empty-state is-hidden" id="adminUserEmpty"><span>◇</span><h3>暂无管理账号</h3></div>
+        </div>
+      </section>
+
+      <section class="settings-panel admin-page" id="settings" data-admin-page="settings">
+        <div class="settings-panel-head">
+          <div><p class="eyebrow">STORE & PROFILE</p><h2>店铺与“我的”页面设置</h2><p>店铺名称、图标及页面内容保存后会同步到小程序。</p></div>
+          <span class="sync-label"><i class="dot green"></i>实时同步</span>
+        </div>
+        <form id="storeSettingsForm">
+          <div class="store-identity-card">
+            <div class="store-icon-preview" id="storeIconPreview"><span>XH</span></div>
+            <div class="store-identity-content">
+              <h3>店铺图标</h3>
+              <p>可以上传文件，也可以粘贴公开可访问的 HTTPS 图片链接。</p>
+              <div class="inline-control-actions"><label class="upload-button">上传图标<input id="storeIconInput" type="file" accept="image/png,image/jpeg,image/webp" hidden /></label><button type="button" class="secondary-button" id="clearStoreIcon">清除图标</button></div>
+              <div class="image-link-row"><input id="storeIconUrl" type="text" inputmode="url" placeholder="粘贴图片 HTTPS 链接（自动下载到本服务器）" /><button type="button" id="applyStoreIconUrl">导入到服务器</button></div>
+            </div>
+          </div>
+          <div class="home-hero-setting-card">
+            <div class="home-hero-setting-head">
+              <div><h3>首页轮播图</h3><p>最多11张；建议 1500 × 780 px，最低 750 × 390 px，单张不超过15MB。上传后会显示每张图的实际像素与文件大小。</p></div>
+              <label class="upload-button">＋ 添加轮播图<input id="homeHeroImageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden /></label>
+            </div>
+            <div class="image-link-row"><input id="homeHeroUrl" type="text" inputmode="url" placeholder="粘贴公开 HTTPS 图片链接（自动下载到本服务器）" /><button type="button" id="addHomeHeroUrl">导入到服务器</button></div>
+            <div class="home-hero-preview-list" id="homeHeroPreview"></div>
+          </div>
+          <div class="settings-form-grid">
+            <label><span>店铺名称 *</span><input name="storeName" required maxlength="40" placeholder="普润制衣团购仓" /></label>
+            <label><span>首页顶部英文</span><input name="homeEyebrow" maxlength="40" placeholder="WHOLESALE · CUSTOM" /></label>
+            <label><span>首页店铺说明</span><input name="homeSubtitle" maxlength="50" placeholder="企业团购与服装定制" /></label>
+            <label><span>搜索框提示文字</span><input name="searchPlaceholder" maxlength="40" placeholder="搜索款号、品类或面料" /></label>
+            <label><span>轮播图底部文字</span><input name="heroNote" maxlength="50" placeholder="现货供应 · 多色可选" /></label>
+            <label><span>轮播图片显示方式</span><select name="homeHeroImageMode"><option value="aspectFill">满铺显示（可能裁切边缘）</option><option value="aspectFit">完整显示（可能留白）</option></select></label>
+            <label><span>分类区主标题</span><input name="categoryTitle" maxlength="20" placeholder="热门分类" /></label>
+            <label><span>分类区副标题</span><input name="categorySubtitle" maxlength="40" placeholder="SHOP BY CATEGORY" /></label>
+            <label><span>分类区右侧文字</span><input name="categoryMoreText" maxlength="20" placeholder="查看全部 →" /></label>
+            <label><span>首页底部服务语（逗号分隔，最多 6 项）</span><input name="homeServices" placeholder="支持小单起订, 免费设计效果图, 企业专属报价" /></label>
+            <label><span>“我的”页面格式</span><select name="profileLayout"><option value="member">会员中心版</option><option value="brand">品牌服务版</option></select></label>
+            <label><span>页面导航标题</span><input name="profilePageTitle" maxlength="12" placeholder="我的" /></label>
+            <label><span>页面主标题</span><input name="profileTitle" maxlength="40" placeholder="普润制衣服务中心" /></label>
+            <label class="span-2"><span>页面说明</span><input name="profileSubtitle" maxlength="80" placeholder="企业团购与服装定制" /></label>
+            <label><span>服务区标题</span><input name="serviceTitle" maxlength="20" placeholder="常用服务" /></label>
+            <label><span>服务项目（逗号分隔，最多 8 项）</span><input name="services" placeholder="设计草稿, 个人资料, 原创精品, 企业认证" /></label>
+            <label><span>关于区域标题</span><input name="profileAboutTitle" maxlength="20" placeholder="关于店铺" /></label>
+            <label><span>商品页底部卖点（逗号分隔，最多 8 项）</span><input name="productFeatures" placeholder="团体定制, 透气亲肤, 可绣可印, 品质检验" /></label>
+            <label class="span-2"><span>关于店铺</span><textarea name="aboutText" rows="4" maxlength="500" placeholder="介绍主营业务、服务优势和定制范围"></textarea></label>
+            <label class="span-2"><span>页脚文字</span><input name="footerText" maxlength="80" placeholder="品质团购 · 专业定制" /></label>
+          </div>
+          <div class="settings-footer"><p class="form-message" id="settingsMessage"></p><button type="submit" class="primary-button" id="saveSettingsButton">保存店铺设置</button></div>
+        </form>
+      </section>
+
+      <footer class="site-compliance-footer admin-compliance">
+        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">陕ICP备2024029868号-2</a>
+      </footer>
+    </main>
+  </div>
+
+  <div class="drawer-backdrop is-hidden" id="drawerBackdrop"></div>
+  <aside class="editor-drawer is-hidden" id="editorDrawer" aria-label="商品编辑器">
+    <form id="productForm">
+      <div class="drawer-head">
+        <div><p class="eyebrow">PRODUCT EDITOR</p><h2 id="drawerTitle">新增商品</h2><small>按左侧分区填写，底部随时保存</small></div>
+        <button type="button" class="icon-button" id="closeDrawerButton" aria-label="关闭编辑页面">×</button>
+      </div>
+      <div class="editor-workspace">
+        <nav class="editor-section-nav" aria-label="商品编辑分区">
+          <button type="button" class="active" data-editor-target="editorBasic"><b>01</b><span>基本资料</span><small>名称、价格、货位</small></button>
+          <button type="button" data-editor-target="editorCategories"><b>02</b><span>商品分类</span><small>主分类与多分类</small></button>
+          <button type="button" data-editor-target="editorInventory"><b>03</b><span>颜色与库存</span><small>颜色、尺码、数量</small></button>
+          <button type="button" data-editor-target="editorMainMedia"><b>04</b><span>主图与颜色图</span><small>主图、海报、颜色图</small></button>
+          <button type="button" data-editor-target="editorDetailMedia"><b>05</b><span>详情与实拍图</span><small>详情长图、实拍图</small></button>
+        </nav>
+        <div class="drawer-body" id="editorScrollArea">
+          <div class="editor-content">
+            <section class="editor-section" id="editorBasic">
+              <header class="editor-section-head"><div><span>01</span><h3>基本资料</h3></div><p>顾客首先看到的商品名称、价格和基本说明</p></header>
+              <div class="form-grid">
+                <label><span>款号 *</span><input name="code" required placeholder="例如 XH2608" /></label>
+                <label><span>商品名称 *</span><input name="name" required placeholder="例如 商务翻领 POLO 衫" /></label>
+                <label class="span-2"><span>货位</span><input name="subtitle" placeholder="例如 A区-01-03" /></label>
+                <label><span>团购价 *</span><input name="price" type="number" min="0" step="0.01" required /></label>
+                <label><span>总库存（自动汇总）</span><input name="stock" type="number" value="0" readonly /></label>
+                <label><span>单位</span><input name="unit" value="件" /></label>
+                <label><span>标签</span><input name="badge" placeholder="新品 / 热销" /></label>
+                <label><span>面料</span><input name="fabric" placeholder="珠地精梳棉" /></label>
+                <label><span>风格</span><input name="style" placeholder="通勤 / 团体" /></label>
+                <label><span>版型</span><input name="fit" placeholder="宽松 / 标准 / 修身" /></label>
+                <input name="sortOrder" type="hidden" value="0" />
+                <label><span>发布状态</span><select name="status"><option value="draft">保存为草稿</option><option value="published">立即上架</option></select></label>
+                <label class="span-2"><span>商品详情文案</span><textarea name="detailText" rows="5" placeholder="介绍版型、面料、工艺、定制方式和注意事项"></textarea></label>
+              </div>
+              <section class="special-size-price-section">
+                <div class="special-size-price-head">
+                  <div>
+                    <h3>特殊尺码区间价</h3>
+                    <p>团购价是默认价格；只有这里设置的尺码区间会使用单独价格，例如 2XL 至 4XL 为 39 元。</p>
+                  </div>
+                  <button type="button" id="addSpecialSizePriceButton">＋ 添加区间</button>
+                </div>
+                <div class="special-size-price-list" id="specialSizePriceList"></div>
+                <div class="special-size-price-empty" id="specialSizePriceEmpty">请先在“颜色与库存”中填写尺码，再添加特殊尺码价格。</div>
+              </section>
+            </section>
+
+            <section class="editor-section" id="editorCategories">
+              <header class="editor-section-head"><div><span>02</span><h3>商品分类</h3></div><p>设置品类名称，以及商品出现在哪些分类中</p></header>
+              <div class="form-grid">
+                <label><span>主分类</span><input name="category" list="categoryOptions" placeholder="选择现有分类或输入新分类" /></label>
+                <label><span>商品品类</span><input name="displayCategory" placeholder="例如 翻领POLO衫" /></label>
+                <section class="product-category-picker span-2">
+                  <div><strong>所属分类（可多选）</strong><small>一个商品可以同时出现在多个分类；主分类会自动包含。</small></div>
+                  <div class="product-category-choices" id="productCategoryChoices"></div>
+                </section>
+              </div>
+            </section>
+
+            <section class="editor-section" id="editorInventory">
+              <header class="editor-section-head"><div><span>03</span><h3>颜色与库存</h3></div><p>先填写颜色和尺码，再核对每个组合的库存数量</p></header>
+              <div class="form-grid">
+                <label class="span-2"><span>颜色（用逗号分隔）</span><input name="colors" placeholder="藏青, 浅绿, 米白" /></label>
+                <label class="span-2"><span>尺码（用逗号分隔）</span><input name="sizes" placeholder="S, M, L, XL, 2XL" /></label>
+              </div>
+
+        <section class="size-stock-section">
+          <div class="size-stock-head"><div><h3>各颜色 · 各尺码库存</h3><p>每个颜色单独设置尺码数量；0 为缺货，1–5 为低库存，6 以上为正常。</p></div><strong id="stockTotalLabel">合计 0</strong></div>
+          <div class="size-stock-grid" id="sizeStockGrid"></div>
+          <div class="size-stock-empty" id="sizeStockEmpty">请先填写颜色和尺码，例如：藏青，S, M, L, XL</div>
+        </section>
+            </section>
+
+            <section class="editor-section" id="editorMainMedia">
+              <header class="editor-section-head"><div><span>04</span><h3>主图与颜色图</h3></div><p>设置商品列表主图、海报以及每种颜色对应的图片</p></header>
+        <div class="upload-section compact">
+          <div><h3>商品默认主图</h3><p>用于商品列表和未单独设置颜色图片时的默认展示</p></div>
+          <label class="upload-button">＋ 添加主图<input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden /></label>
+        </div>
+        <div class="image-link-row"><input id="mainImageUrl" type="text" inputmode="url" placeholder="粘贴商品主图 HTTPS 链接（自动下载到本服务器）" /><button type="button" id="addMainImageUrl">导入到服务器</button></div>
+        <div class="image-grid" id="imageGrid"></div>
+
+        <section class="product-poster-section">
+          <div class="product-poster-head">
+            <div><h3>商品海报图片</h3><p>海报固定展示在商品画册第一张；选择颜色后会自动跳到该颜色图片。支持 PNG、JPG、WebP，单张不超过15MB。</p></div>
+            <label class="upload-button">上传 / 更换海报<input id="posterImageInput" type="file" accept="image/png,image/jpeg,image/webp" hidden /></label>
+          </div>
+          <div class="image-link-row"><input id="posterImageUrl" type="text" inputmode="url" placeholder="粘贴商品海报 HTTPS 链接（自动下载到本服务器）" /><button type="button" id="applyPosterImageUrl">导入到服务器</button></div>
+          <div class="poster-image-preview" id="posterImagePreview"></div>
+        </section>
+
+        <section class="color-gallery-section">
+          <div class="color-gallery-head"><h3>商品颜色对应图片</h3><p>每个颜色可分别上传多张图片，并单独调整顺序或删除。</p></div>
+          <div class="color-gallery-list" id="colorGalleryList"></div>
+        </section>
+            </section>
+
+            <section class="editor-section" id="editorDetailMedia">
+              <header class="editor-section-head"><div><span>05</span><h3>详情与实拍图</h3></div><p>顾客进入商品详情或实拍图后可以逐张翻看</p></header>
+        <div class="upload-section compact">
+          <div><h3>详情长图</h3><p>按上传顺序展示在独立商品详情页</p></div>
+          <label class="upload-button">＋ 添加详情图<input id="detailImageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden /></label>
+        </div>
+        <div class="image-link-row"><input id="detailImageUrl" type="text" inputmode="url" placeholder="粘贴详情图 HTTPS 链接（自动下载到本服务器）" /><button type="button" id="addDetailImageUrl">导入到服务器</button></div>
+        <div class="image-grid" id="detailImageGrid"></div>
+
+        <div class="upload-section">
+          <div><h3>实拍图</h3><p>上传后为每张图选择正面、背面、细节、颜色或穿着效果</p></div>
+          <label class="upload-button">＋ 添加实拍图<input id="realImageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden /></label>
+        </div>
+        <div class="image-link-row image-link-row-with-select">
+          <input id="realImageUrl" type="text" inputmode="url" placeholder="粘贴实拍图 HTTPS 链接（自动下载到本服务器）" />
+          <select id="realImageLinkCategory" aria-label="链接实拍图分类"><option>正面实拍</option><option>背面实拍</option><option>细节特写</option><option>颜色展示</option><option>穿着效果</option><option>实物展示</option></select>
+          <button type="button" id="addRealImageUrl">导入到服务器</button>
+        </div>
+        <div class="real-image-grid" id="realImageGrid"></div>
+            </section>
+        <p class="form-message" id="formMessage"></p>
+          </div>
+      </div>
+      </div>
+      <div class="editor-scroll-control">
+        <span>页面位置</span>
+        <input id="editorScrollSlider" type="range" min="0" max="1000" value="0" aria-label="拖动调整编辑页面位置" />
+        <output id="editorScrollPercent">0%</output>
+      </div>
+      <div class="drawer-footer"><button type="button" class="secondary-button danger is-hidden" id="deleteProductButton">删除商品</button><span class="editor-save-hint">保存后立即同步到小程序</span><div class="footer-spacer"></div><button type="button" class="secondary-button" id="cancelButton">取消</button><button type="submit" class="primary-button" id="saveButton">保存商品</button></div>
+    </form>
+  </aside>
+
+  <div class="unmatched-report-backdrop is-hidden" id="unmatchedReportBackdrop"></div>
+  <section class="unmatched-report-modal is-hidden" id="unmatchedReportModal" aria-label="未匹配产品明细">
+    <header class="unmatched-report-head">
+      <div><p class="eyebrow">UNMATCHED INVENTORY</p><h2>未匹配产品明细</h2><p id="unmatchedReportMeta">正在读取最近一次导入结果…</p></div>
+      <div class="unmatched-report-head-actions">
+        <button type="button" class="secondary-button" id="latestUnmatchedDownloadButton">↓ 下载 Excel</button>
+        <button type="button" class="icon-button" id="closeUnmatchedReportButton">×</button>
+      </div>
+    </header>
+    <div class="unmatched-report-toolbar">
+      <label class="search-control"><span>⌕</span><input id="unmatchedReportSearch" placeholder="搜索商品名称、款号、颜色、尺码或候选商品" /></label>
+      <select id="unmatchedReportReason"><option value="all">全部未匹配原因</option></select>
+      <strong id="unmatchedReportCount">0 条明细</strong>
+    </div>
+    <div class="unmatched-report-table-wrap">
+      <table class="unmatched-report-table">
+        <thead><tr><th>来源行</th><th>来源商品 / 款号</th><th>颜色</th><th>尺码</th><th>库存</th><th>未匹配原因</th><th>候选商品</th><th>商品现有颜色 / 尺码</th></tr></thead>
+        <tbody id="unmatchedReportRows"></tbody>
+      </table>
+      <div class="empty-state is-hidden" id="unmatchedReportEmpty"><span>◇</span><h3>没有符合条件的未匹配明细</h3><p>请调整搜索或筛选条件。</p></div>
+    </div>
+    <footer class="unmatched-report-footer">
+      <button type="button" class="secondary-button" id="unmatchedReportPrevious">上一页</button>
+      <label class="pagination-page-selector" for="unmatchedReportPageSelect">
+        <span>第</span>
+        <select id="unmatchedReportPageSelect" aria-label="选择未匹配明细页码"><option value="1">1</option></select>
+        <span>/ <b id="unmatchedReportTotalPages">1</b> 页</span>
+      </label>
+      <button type="button" class="secondary-button" id="unmatchedReportNext">下一页</button>
+    </footer>
+  </section>
+
+  <datalist id="categoryOptions"></datalist>
+  <div class="inventory-product-search-popup is-hidden" id="inventoryProductSearchPopup"></div>
+  <section class="operation-progress is-hidden" id="operationProgress" role="status" aria-live="polite">
+    <div class="operation-progress-head">
+      <div><strong id="operationProgressTitle">正在上传</strong><span id="operationProgressState">准备中</span></div>
+      <b id="operationProgressPercent">0%</b>
+    </div>
+    <div class="operation-progress-track"><i id="operationProgressFill"></i></div>
+    <p id="operationProgressDetail">正在准备文件…</p>
+  </section>
+  <div class="toast" id="toast" role="status"></div>
+  <script type="module" src="/admin/app.js?v=20260729-smart-image-upload1"></script>
+</body>
+</html>

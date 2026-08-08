@@ -1,0 +1,74 @@
+<view class="page-navigation" style="padding-top: {{pageNavigation.statusBarHeight}}rpx;">
+  <view class="page-navigation__bar" style="height: {{pageNavigation.navigationBarHeight}}rpx;">
+    <text class="page-navigation__title">首页</text>
+  </view>
+</view>
+<view class="home-first-frame" wx:if="{{!homeReady}}">
+  <view class="home-first-brand"></view>
+  <view class="home-first-search"></view>
+  <view class="home-first-hero"></view>
+  <view class="home-first-grid"></view>
+</view>
+<view class="page home-page">
+  <view class="home-top">
+    <view class="eyebrow">{{settings.homeEyebrow}}</view>
+    <view class="brand-row">
+      <view class="home-brand-identity">
+      <stable-image wx:if="{{storeIcon}}" class="home-store-icon" src="{{storeIcon}}" mode="aspectFill" />
+        <view>
+          <view class="brand-title">{{storeName}}</view>
+          <view class="brand-sub">{{settings.homeSubtitle}}</view>
+        </view>
+      </view>
+    </view>
+    <view class="search-box home-search" bindtap="openSearch" role="button" aria-label="打开商品搜索">
+      <text class="search-icon">⌕</text>
+      <view class="search-input search-entry-placeholder">{{settings.searchPlaceholder}}</view>
+      <view class="camera-action {{imageRecognizing ? 'recognizing' : ''}}" catchtap="openImageSearch" aria-label="拍图识别产品">
+        <view class="camera-icon"><view></view></view>
+      </view>
+      <text class="search-action">搜索</text>
+    </view>
+  </view>
+
+  <view class="hero-wrap">
+    <swiper class="hero-swiper" autoplay="{{heroSlides.length > 1}}" interval="4500" duration="500" circular="{{heroSlides.length > 1}}" bindchange="onHeroChange">
+      <swiper-item wx:for="{{heroSlides}}" wx:key="url">
+        <stable-image class="hero" src="{{item.src}}" mode="{{settings.homeHeroImageMode}}" />
+      </swiper-item>
+    </swiper>
+    <view class="hero-copy">
+      <view class="hero-note">{{settings.heroNote}}</view>
+    </view>
+    <view class="hero-index">{{heroCurrent + 1}} / {{heroImages.length}}</view>
+  </view>
+
+  <view class="category-card surface">
+    <view class="section-head">
+      <view>
+        <view class="section-title">{{settings.categoryTitle}}</view>
+        <view class="section-en">{{settings.categorySubtitle}}</view>
+      </view>
+      <view class="section-more" bindtap="goAll">{{settings.categoryMoreText}}</view>
+    </view>
+    <view class="category-grid" wx:if="{{homeReady}}">
+      <view class="category-item" wx:for="{{categories}}" wx:key="id" data-name="{{item.name}}" data-type="{{item.type}}" bindtap="goCategory">
+        <view class="category-icon" style="background: {{item.tone}}22; color: {{item.tone}}; border-color: {{item.tone}}55;">
+      <stable-image wx:if="{{item.image}}" class="category-icon-image" src="{{item.image}}" mode="aspectFill" lazy-load="{{true}}" data-name="{{item.name}}" data-type="{{item.type}}" bind:imagetap="goCategory" />
+          <text wx:else>{{item.icon}}</text>
+        </view>
+        <text class="category-name">{{item.name}}</text>
+      </view>
+    </view>
+    <view class="category-grid" wx:else>
+      <view class="category-item" wx:for="{{[1,2,3,4,5,6,7,8]}}" wx:key="*this">
+        <view class="category-icon category-icon-placeholder"></view>
+        <view class="category-name category-name-placeholder"></view>
+      </view>
+    </view>
+  </view>
+
+  <view class="service-strip" wx:if="{{settings.homeServices.length}}">
+    <view wx:for="{{settings.homeServices}}" wx:key="*this"><text>✓</text> {{item}}</view>
+  </view>
+</view>

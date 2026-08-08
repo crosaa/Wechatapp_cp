@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Purun Mini Program maintenance every day
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=10m
+
+[Install]
+WantedBy=timers.target

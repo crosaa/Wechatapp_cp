@@ -1,0 +1,19 @@
+[Unit]
+Description=Purun Mini Program daily backup and orphan image cleanup
+After=cpminiapp.service
+
+[Service]
+Type=oneshot
+User=cpminiapp
+Group=cpminiapp
+WorkingDirectory=/opt/cpminiapp
+EnvironmentFile=/etc/cpminiapp.env
+Environment=BACKUP_RETENTION_DAYS=5
+Environment=ORPHAN_GRACE_HOURS=24
+ExecStart=/usr/bin/node /opt/cpminiapp/scripts/daily-maintenance.mjs
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/cpminiapp

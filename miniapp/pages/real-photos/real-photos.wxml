@@ -1,0 +1,41 @@
+<view class="page-navigation page-navigation--sticky" style="padding-top: {{pageNavigation.statusBarHeight}}rpx;">
+  <view class="page-navigation__bar" style="height: {{pageNavigation.navigationBarHeight}}rpx;">
+    <view class="page-navigation__back" bindtap="goBack" aria-label="返回">
+      <view class="page-navigation__back-icon"></view>
+    </view>
+    <text class="page-navigation__title">实拍图</text>
+  </view>
+</view>
+<view class="subpage-first-frame" wx:if="{{!pageReady}}" style="top: {{pageNavigation.statusBarHeight + pageNavigation.navigationBarHeight}}rpx;">
+  <view class="subpage-first-block"></view>
+  <view class="subpage-first-grid"></view>
+</view>
+<view class="page real-page">
+  <view class="real-header surface">
+    <text>REAL PRODUCT PHOTOS</text>
+    <view>{{product.name}}</view>
+    <text>商品实拍 · 按图片分类查看</text>
+  </view>
+  <scroll-view class="photo-tabs surface" scroll-x="true" show-scrollbar="false">
+    <view class="photo-tab-row">
+      <view class="photo-tab {{selected === item ? 'active' : ''}}" wx:for="{{categories}}" wx:key="*this" data-category="{{item}}" bindtap="selectCategory">{{item}}</view>
+    </view>
+  </scroll-view>
+  <view class="photo-meta"><text>{{selected}}</text><text>{{imageCount}} 张实拍图</text></view>
+  <view class="photo-grid">
+    <view class="photo-card surface" wx:for="{{displayImages}}" wx:key="url">
+      <stable-image class="photo-card-image" src="{{item.displayUrl}}" mode="aspectFill" data-url="{{item.url}}" bind:imagetap="previewImage" show-menu-by-longpress="{{true}}" lazy-load="{{true}}" />
+      <view class="photo-card-meta"><text>{{item.category}}</text><text>点击打开 · 长按保存或转发</text></view>
+      <view class="photo-design-button" data-url="{{item.url}}" bindtap="designWithPhoto"><text>以本图开始设计</text><text>→</text></view>
+    </view>
+  </view>
+  <view class="photo-more" wx:if="{{displayImages.length < imageCount}}">继续下滑加载剩余图片</view>
+  <view class="photo-empty" wx:if="{{!displayImages.length}}">该分类暂未上传实拍图</view>
+</view>
+<view class="subpage-bottom-bar">
+  <view class="subpage-home" bindtap="goHome">
+    <image src="/assets/tabbar/home-normal.png" mode="aspectFit" />
+    <text>首页</text>
+  </view>
+  <button class="subpage-return" bindtap="goBack">返回商品</button>
+</view>
