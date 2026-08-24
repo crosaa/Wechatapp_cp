@@ -1373,7 +1373,17 @@ function renderColorGalleries() {
 
 function renderDetailImages() {
   $('#detailImageGrid').innerHTML = state.detailImages.length
-    ? state.detailImages.map((url, index) => `<div class="image-item"><img src="${escapeHtml(url)}" alt="详情图片 ${index + 1}" loading="lazy" decoding="async" /><button type="button" data-remove-detail-image="${index}" aria-label="移除详情图片">×</button></div>`).join('')
+    ? state.detailImages.map((url, index) => `<div class="image-item detail-image-item">
+        <div class="image-item-visual">
+          <img src="${escapeHtml(url)}" alt="详情图片 ${index + 1}" loading="lazy" decoding="async" />
+          <span class="image-index">详情 ${index + 1}</span>
+        </div>
+        <div class="detail-image-actions">
+          <button type="button" data-detail-image-action="previous" data-detail-image-index="${index}" ${index === 0 ? 'disabled' : ''}>前移</button>
+          <button type="button" data-detail-image-action="next" data-detail-image-index="${index}" ${index === state.detailImages.length - 1 ? 'disabled' : ''}>后移</button>
+          <button type="button" data-detail-image-action="remove" data-detail-image-index="${index}">删除</button>
+        </div>
+      </div>`).join('')
     : '<div class="image-empty">还没有详情长图，商品详情页会先使用主图。</div>'
 }
 
@@ -2700,9 +2710,13 @@ $('#productForm').elements.colors.addEventListener('input', () => {
 })
 
 $('#detailImageGrid').addEventListener('click', event => {
-  const button = event.target.closest('[data-remove-detail-image]')
+  const button = event.target.closest('[data-detail-image-action]')
   if (!button) return
-  state.detailImages.splice(Number(button.dataset.removeDetailImage), 1)
+  const index = Number(button.dataset.detailImageIndex)
+  if (!Number.isInteger(index)) return
+  if (button.dataset.detailImageAction === 'remove') state.detailImages.splice(index, 1)
+  if (button.dataset.detailImageAction === 'previous' && index > 0) [state.detailImages[index - 1], state.detailImages[index]] = [state.detailImages[index], state.detailImages[index - 1]]
+  if (button.dataset.detailImageAction === 'next' && index < state.detailImages.length - 1) [state.detailImages[index + 1], state.detailImages[index]] = [state.detailImages[index], state.detailImages[index + 1]]
   renderDetailImages()
 })
 
