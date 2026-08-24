@@ -975,7 +975,10 @@ function renderCategoryManagement() {
     const expanded = state.expandedCategoryId === category.id
     return `
       <article class="category-management-item ${expanded ? 'is-expanded' : ''}" data-category-row="${category.id}">
-        <div class="category-position">${index + 1}</div>
+        <label class="category-position-control">
+          <span>排序</span>
+          <input type="number" inputmode="numeric" min="1" max="${state.categories.length}" step="1" value="${index + 1}" data-category-position="${category.id}" aria-label="${escapeHtml(category.name)}的大类排序位置" />
+        </label>
         <div class="category-cover" style="background-color:${escapeHtml(category.tone)}22;color:${escapeHtml(category.tone)};">
           ${category.image ? `<img src="${escapeHtml(category.image)}" alt="${escapeHtml(category.name)}首页图片" loading="lazy" decoding="async" />` : `<span>${escapeHtml(category.icon || category.name.slice(0, 2))}</span>`}
         </div>
@@ -2419,7 +2422,47 @@ $('#newCategoryName').addEventListener('keydown', event => {
   }
 })
 
+async function saveCategoryPosition(input) {
+  const categoryId = Number(input.dataset.categoryPosition)
+  const currentIndex = state.categories.findIndex(item => item.id === categoryId)
+  const requestedPosition = Number(input.value)
+  if (currentIndex < 0) return
+  if (!Number.isInteger(requestedPosition) || requestedPosition < 1 || requestedPosition > state.categories.length) {
+    input.value = currentIndex + 1
+    toast(`大类排序位置请输入 1–${state.categories.length} 的整数`)
+    return
+  }
+
+  const nextIndex = requestedPosition - 1
+  if (nextIndex === currentIndex) return
+  const reordered = state.categories.slice()
+  const [movedCategory] = reordered.splice(currentIndex, 1)
+  reordered.splice(nextIndex, 0, movedCategory)
+  input.disabled = true
+  $('#categoryManagementMessage').textContent = `正在把“${movedCategory.name}”调整到第 ${requestedPosition} 位…`
+  try {
+    const result = await api('/api/admin/categories/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ ids: reordered.map(item => item.id) })
+    })
+    state.categories = result.data
+    $('#categoryManagementMessage').textContent = ''
+    render()
+    toast(`“${movedCategory.name}”已调整到大类第 ${requestedPosition} 位并同步到小程序`)
+  } catch (error) {
+    input.disabled = false
+    input.value = currentIndex + 1
+    $('#categoryManagementMessage').textContent = error.message
+    toast(error.message)
+  }
+}
+
 $('#categoryManagementList').addEventListener('change', async event => {
+  const categoryPositionInput = event.target.closest('[data-category-position]')
+  if (categoryPositionInput) {
+    await saveCategoryPosition(categoryPositionInput)
+    return
+  }
   const positionInput = event.target.closest('[data-category-product-position]')
   if (!positionInput) return
   const categoryId = Number(positionInput.dataset.categoryProductPosition)
@@ -2451,9 +2494,9 @@ $('#categoryManagementList').addEventListener('change', async event => {
 })
 
 $('#categoryManagementList').addEventListener('keydown', event => {
-  if (event.key === 'Enter' && event.target.matches('[data-category-product-position]')) {
+  if (event.key === 'Enter' && event.target.matches('[data-category-position], [data-category-product-position]')) {
     event.preventDefault()
-    event.target.dispatchEvent(new Event('change', { bubbles: true }))
+    event.target.blur()
   }
 })
 
