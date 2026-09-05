@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
 import { listProducts } from '../server/db.mjs'
 
+sharp.cache({ memory: 64, files: 20, items: 20 })
+sharp.concurrency(1)
+
 const serverDir = fileURLToPath(new URL('../server/', import.meta.url))
 const uploadsDir = resolve(process.env.UPLOADS_DIR || join(serverDir, 'uploads'))
 const thumbnailsDir = join(uploadsDir, '.thumbnails')
