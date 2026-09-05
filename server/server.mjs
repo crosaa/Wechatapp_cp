@@ -246,7 +246,7 @@ function clearLoginAccountFailures(req, username) {
 
 function thumbnailSize(value, fallback = 360) {
   const parsed = Number(value)
-  return [160, 200, 240, 320, 360, 480, 640, 960, 1200].includes(parsed) ? parsed : fallback
+  return [160, 200, 240, 320, 360, 480, 640, 960, 1200, 1600, 2000].includes(parsed) ? parsed : fallback
 }
 
 function localUploadPath(sourcePath) {
@@ -267,7 +267,8 @@ async function ensureImageThumbnail(sourcePath, requestedSize = 360, requestedFi
   if (!local) return null
   const size = thumbnailSize(requestedSize)
   const fit = thumbnailFit(requestedFit)
-  const thumbnailName = `${createHash('sha1').update(local.relativeSource).digest('hex')}-${size}-${fit}.webp`
+  const thumbnailKey = local.relativeSource.replaceAll('\\', '/')
+  const thumbnailName = `${createHash('sha1').update(thumbnailKey).digest('hex')}-${size}-${fit}.webp`
   const thumbnailPath = join(thumbnailsDir, thumbnailName)
   if (!existsSync(thumbnailPath)) {
     let task = thumbnailTasks.get(thumbnailPath)
@@ -275,10 +276,11 @@ async function ensureImageThumbnail(sourcePath, requestedSize = 360, requestedFi
       const resizeOptions = fit === 'width'
         ? { width: size, withoutEnlargement: true }
         : { width: size, height: size, fit: 'inside', withoutEnlargement: true }
+      const quality = size >= 1600 ? 86 : 76
       task = sharp(local.filePath)
         .rotate()
         .resize(resizeOptions)
-        .webp({ quality: 76, effort: 4 })
+        .webp({ quality, smartSubsample: true, effort: 4 })
         .toFile(thumbnailPath)
         .finally(() => thumbnailTasks.delete(thumbnailPath))
       thumbnailTasks.set(thumbnailPath, task)
@@ -825,7 +827,8 @@ async function uploadImage(body) {
   if (['product', 'poster', 'detail', 'real', 'general'].includes(purpose)) {
     await Promise.all([
       ensureImageThumbnail(url, 360),
-      ensureImageThumbnail(url, 1200, 'width')
+      ensureImageThumbnail(url, 1200, 'width'),
+      ensureImageThumbnail(url, 2000, 'width')
     ])
   }
   return { url, optimization: optimized.metadata }
@@ -957,7 +960,8 @@ async function downloadImageToUploads(value, redirectCount = 0, options = {}) {
   if (['product', 'poster', 'detail', 'real', 'general'].includes(purpose)) {
     await Promise.all([
       ensureImageThumbnail(localUrl, 360),
-      ensureImageThumbnail(localUrl, 1200, 'width')
+      ensureImageThumbnail(localUrl, 1200, 'width'),
+      ensureImageThumbnail(localUrl, 2000, 'width')
     ])
   }
   return { url: localUrl, optimization: optimized.metadata }

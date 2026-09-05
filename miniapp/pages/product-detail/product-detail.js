@@ -2,11 +2,13 @@ const { fetchProduct, readProductSnapshot, refreshDataVersion, thumbnailImage } 
 const { firstImage, appShare, timelineShare, favoriteShare, productTitle, productQuery } = require('../../common/share')
 
 const DETAIL_BATCH_SIZE = 6
+const PREVIEW_IMAGE_SIZE = 2000
 
 function buildDetailSlides(product) {
   return (product.detailImages || []).map(original => ({
     original,
-    display: thumbnailImage(original, 960, 'width')
+    display: thumbnailImage(original, 960, 'width'),
+    preview: thumbnailImage(original, PREVIEW_IMAGE_SIZE, 'width')
   }))
 }
 
@@ -20,6 +22,7 @@ function detailState(product, detailSlides = buildDetailSlides(product)) {
     subtitle: product.subtitle || '',
     image,
     imageDisplay: thumbnailImage(image, 960, 'width'),
+    imagePreview: thumbnailImage(image, PREVIEW_IMAGE_SIZE, 'width'),
     detailText: product.detailText || '',
     detailImages,
     detailImageCount: detailSlides.length,
@@ -85,13 +88,66 @@ Page({
     })
   },
   previewImage(event) {
-    const current = event.currentTarget.dataset.url
+    const currentOriginal = event.currentTarget.dataset.url
+    if (!currentOriginal) return
+    const previewPairs = [
+      { original: this.data.product.image, preview: this.data.product.imagePreview },
+      ...(this.allDetailSlides || [])
+    ].filter(item => item.original && item.preview)
+    const current = previewPairs.find(item => item.original === currentOriginal)?.preview
     if (!current) return
     const urls = [...new Set([
-      this.data.product.image,
-      ...(this.data.product.detailImages || [])
+      ...previewPairs.map(item => item.preview)
     ].filter(Boolean))]
     wx.previewImage({ current, urls, showmenu: true })
+  },
+  downloadOriginal(event) {
+    const url = event.currentTarget.dataset.url
+    if (!url || this.downloadingOriginal) return
+    this.downloadingOriginal = true
+    wx.showLoading({ title: '下载原图中', mask: true })
+    const finish = () => {
+      this.downloadingOriginal = false
+      wx.hideLoading()
+    }
+    wx.downloadFile({
+      url,
+      timeout: 30000,
+      success: result => {
+        if (result.statusCode < 200 || result.statusCode >= 300 || !result.tempFilePath) {
+          finish()
+          wx.showToast({ title: '原图下载失败', icon: 'none' })
+          return
+        }
+        wx.saveImageToPhotosAlbum({
+          filePath: result.tempFilePath,
+          success: () => {
+            finish()
+            wx.showToast({ title: '原图已保存', icon: 'success' })
+          },
+          fail: error => {
+            finish()
+            const denied = /auth deny|auth denied|authorize:fail/i.test(error.errMsg || '')
+            if (!denied) {
+              wx.showToast({ title: '保存原图失败', icon: 'none' })
+              return
+            }
+            wx.showModal({
+              title: '需要相册权限',
+              content: '请在设置中允许保存图片到相册。',
+              confirmText: '去设置',
+              success: modal => {
+                if (modal.confirm) wx.openSetting()
+              }
+            })
+          }
+        })
+      },
+      fail: () => {
+        finish()
+        wx.showToast({ title: '原图下载失败', icon: 'none' })
+      }
+    })
   },
   onShareAppMessage() {
     const query = productQuery(this.data.product)

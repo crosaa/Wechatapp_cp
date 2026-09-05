@@ -448,6 +448,14 @@ try {
   assert.equal(displayThumbnailMetadata.height, 150)
   assert.equal(displayThumbnailMetadata.format, 'webp')
 
+  const previewThumbnailResponse = await fetch(`${base}/api/product-thumbnail?src=${encodeURIComponent(originalUpload.body.url)}&size=2000&fit=width`)
+  assert.equal(previewThumbnailResponse.status, 200)
+  assert.match(previewThumbnailResponse.headers.get('cache-control'), /immutable/)
+  const previewThumbnailMetadata = await sharp(Buffer.from(await previewThumbnailResponse.arrayBuffer())).metadata()
+  assert.equal(previewThumbnailMetadata.width, 2000)
+  assert.equal(previewThumbnailMetadata.height, 250)
+  assert.equal(previewThumbnailMetadata.format, 'webp')
+
   const cleanupUpload = await request('/api/admin/uploads', {
     method: 'POST',
     body: JSON.stringify({

@@ -13,6 +13,10 @@
 <view class="page detail-page">
   <view class="detail-hero surface">
     <stable-image class="detail-hero-image" src="{{product.imageDisplay}}" mode="aspectFill" data-url="{{product.image}}" bind:imagetap="previewImage" show-menu-by-longpress="{{true}}" />
+    <view class="detail-image-actions">
+      <text>点击高清预览</text>
+      <view class="detail-original-download" data-url="{{product.image}}" catchtap="downloadOriginal">下载原图</view>
+    </view>
     <view class="detail-hero-copy">
       <text>{{product.code}}</text>
       <view>{{product.name}}</view>
@@ -32,7 +36,10 @@
 
   <view class="detail-gallery-title"><text>DETAIL GALLERY</text><view>详情长图</view></view>
   <view class="detail-gallery surface">
-    <image wx:for="{{product.detailSlides}}" wx:key="original" src="{{item.display}}" mode="widthFix" data-url="{{item.original}}" bindtap="previewImage" show-menu-by-longpress="{{true}}" lazy-load="{{true}}" fade-in="{{false}}" />
+    <view class="detail-slide" wx:for="{{product.detailSlides}}" wx:key="original">
+      <image src="{{item.display}}" mode="widthFix" data-url="{{item.original}}" bindtap="previewImage" show-menu-by-longpress="{{true}}" lazy-load="{{true}}" fade-in="{{false}}" />
+      <view class="detail-slide-download" data-url="{{item.original}}" catchtap="downloadOriginal">下载原图</view>
+    </view>
     <view wx:if="{{!product.detailImages.length}}" class="detail-empty">后台暂未上传详情长图</view>
     <view wx:elif="{{product.detailSlides.length < product.detailImageCount}}" class="detail-loading">继续下滑加载剩余图片</view>
   </view>

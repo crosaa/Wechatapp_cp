@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'node:fs'
-import { extname, join, normalize, resolve, sep } from 'node:path'
+import { basename, extname, join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   backupCatalogDatabase,
@@ -114,17 +114,16 @@ for (const filePath of walkFiles(uploadsDir)) {
   const uploadPath = `/uploads/${relative}`
   if (!referenced.has(uploadPath) && statSync(filePath).mtimeMs <= graceCutoff) {
     removeFile(filePath, 'orphanUploadsRemoved', summary)
-    const thumbnailPath = join(thumbnailsDir, `${createHash('sha1').update(relative).digest('hex')}.webp`)
-    if (existsSync(thumbnailPath)) removeFile(thumbnailPath, 'orphanThumbnailsRemoved', summary)
   }
 }
 
-const expectedThumbnails = new Set([...referenced].map(uploadPath => {
+const referencedThumbnailHashes = new Set([...referenced].map(uploadPath => {
   const relative = uploadPath.slice('/uploads/'.length)
-  return join(thumbnailsDir, `${createHash('sha1').update(relative).digest('hex')}.webp`)
+  return createHash('sha1').update(relative).digest('hex')
 }))
 for (const filePath of walkFiles(thumbnailsDir)) {
-  if (!expectedThumbnails.has(filePath) && statSync(filePath).mtimeMs <= graceCutoff) {
+  const thumbnailHash = basename(filePath).match(/^([a-f0-9]{40})(?:-|\.webp$)/)?.[1]
+  if ((!thumbnailHash || !referencedThumbnailHashes.has(thumbnailHash)) && statSync(filePath).mtimeMs <= graceCutoff) {
     removeFile(filePath, 'orphanThumbnailsRemoved', summary)
   }
 }

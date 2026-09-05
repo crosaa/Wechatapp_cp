@@ -98,3 +98,11 @@ node scripts/daily-maintenance.mjs
 ```
 
 默认每天保留最近 5 天数据库备份，并给未保存完成的新上传图片保留 24 小时缓冲期。
+
+首次部署高清图片预览，或批量导入历史商品图片后，执行以下命令预生成 2000px 高质量 WebP 预览图，避免用户首次点击时等待服务器临时处理：
+
+```bash
+npm run build:image-thumbnails
+```
+
+该任务默认并发处理 2 张图片；服务器资源较充足时可使用 `node scripts/build-image-thumbnails.mjs --concurrency=4`。
