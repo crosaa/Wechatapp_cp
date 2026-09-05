@@ -1,14 +1,17 @@
 const { fetchProduct, readProductSnapshot, refreshDataVersion, thumbnailImage } = require('../../common/api')
 const { firstImage, appShare, timelineShare, favoriteShare, productTitle, productQuery } = require('../../common/share')
+const { saveOriginalImage } = require('../../common/image')
 
 const PHOTO_BATCH_SIZE = 8
+const PREVIEW_IMAGE_SIZE = 2000
 
 function galleryImages(product, selected = '全部') {
   const realImages = product.realImages || []
   const selectedImages = selected === '全部' ? realImages : realImages.filter(item => item.category === selected)
   return selectedImages.map(item => ({
     ...item,
-    displayUrl: thumbnailImage(item.url, 960, 'width')
+    displayUrl: thumbnailImage(item.url, 960, 'width'),
+    previewUrl: thumbnailImage(item.url, PREVIEW_IMAGE_SIZE, 'width')
   }))
 }
 
@@ -87,10 +90,15 @@ Page({
     })
   },
   previewImage(event) {
-    const current = event.currentTarget.dataset.url
+    const original = event.currentTarget.dataset.url
+    const images = this.allDisplayImages || this.data.displayImages
+    const current = images.find(item => item.url === original)?.previewUrl
     if (!current) return
-    const urls = (this.allDisplayImages || this.data.displayImages).map(item => item.url).filter(Boolean)
+    const urls = images.map(item => item.previewUrl).filter(Boolean)
     wx.previewImage({ current, urls, showmenu: true })
+  },
+  downloadOriginal(event) {
+    saveOriginalImage(event.currentTarget.dataset.url)
   },
   designWithPhoto(event) {
     const sourceImage = event.currentTarget.dataset.url

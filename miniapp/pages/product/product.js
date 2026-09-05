@@ -1,7 +1,9 @@
 const { fetchProduct, fetchStoreSettings, readProductSnapshot, refreshDataVersion, thumbnailImage, defaultStoreSettings } = require('../../common/api')
 const { firstImage, appShare, timelineShare, favoriteShare, productTitle, productQuery } = require('../../common/share')
+const { saveOriginalImage } = require('../../common/image')
 
 const featureIcons = ['◫', '♨', '⌁', '✓', '★', '品', '服', '定']
+const PREVIEW_IMAGE_SIZE = 2000
 
 function featureItems(features) {
   return (features || []).map((name, index) => ({ name, icon: featureIcons[index % featureIcons.length] }))
@@ -129,6 +131,7 @@ function galleryState(product, color, preferColorImage = false) {
     selectedGallerySlides: selectedGallery.map((original, index) => ({
       original,
       display: thumbnailImage(original, 960, 'width'),
+      preview: thumbnailImage(original, PREVIEW_IMAGE_SIZE, 'width'),
       src: index === galleryCurrent ? thumbnailImage(original, 960, 'width') : ''
     })),
     galleryCurrent,
@@ -281,13 +284,18 @@ Page({
     }, 180)
   },
   previewGalleryImage(e) {
-    const current = e.currentTarget.dataset.url || this.data.selectedGallery[this.data.galleryCurrent]
+    const original = e.currentTarget.dataset.url || this.data.selectedGallery[this.data.galleryCurrent]
+    const slides = this.data.selectedGallerySlides || []
+    const current = slides.find(item => item.original === original)?.preview
     if (!current) return
     wx.previewImage({
       current,
-      urls: [current],
+      urls: [...new Set(slides.map(item => item.preview).filter(Boolean))],
       showmenu: true
     })
+  },
+  downloadOriginal(e) {
+    saveOriginalImage(e.currentTarget.dataset.url || this.data.selectedGallery[this.data.galleryCurrent])
   },
   selectSize(e) {
     if (Number(e.currentTarget.dataset.stock) <= 0) {
@@ -308,7 +316,8 @@ Page({
       wx.showToast({ title: '该商品暂未上传海报', icon: 'none' })
       return
     }
-    wx.previewImage({ current: posterImage, urls: [posterImage], showmenu: true })
+    const preview = thumbnailImage(posterImage, PREVIEW_IMAGE_SIZE, 'width')
+    wx.previewImage({ current: preview, urls: [preview], showmenu: true })
   },
   goHome() { wx.switchTab({ url: '/pages/home/home' }) },
   goDetailPage() { wx.navigateTo({ url: `/pages/product-detail/product-detail?id=${this.data.product.id}` }) },

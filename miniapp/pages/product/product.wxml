@@ -14,7 +14,8 @@
       </swiper-item>
     </swiper>
     <view class="gallery-loading" wx:if="{{!selectedGallery.length}}">正在打开商品…</view>
-    <view class="gallery-action-tip" wx:if="{{selectedGallery.length}}">点击打开 · 长按保存或转发</view>
+    <view class="gallery-download" wx:if="{{selectedGallery.length}}" data-url="{{selectedGallery[galleryCurrent]}}" catchtap="downloadOriginal">下载原图</view>
+    <view class="gallery-action-tip" wx:if="{{selectedGallery.length}}">点击高清预览</view>
     <view class="gallery-label" wx:if="{{selectedGallery.length}}">{{galleryLabel}} · {{galleryCurrent + 1}}/{{selectedGallery.length}}</view>
   </view>
 

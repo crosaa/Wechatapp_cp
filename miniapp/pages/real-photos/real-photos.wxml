@@ -25,7 +25,7 @@
   <view class="photo-grid">
     <view class="photo-card surface" wx:for="{{displayImages}}" wx:key="url">
       <stable-image class="photo-card-image" src="{{item.displayUrl}}" mode="aspectFill" data-url="{{item.url}}" bind:imagetap="previewImage" show-menu-by-longpress="{{true}}" lazy-load="{{true}}" />
-      <view class="photo-card-meta"><text>{{item.category}}</text><text>点击打开 · 长按保存或转发</text></view>
+      <view class="photo-card-meta"><text>{{item.category}}</text><view data-url="{{item.url}}" catchtap="downloadOriginal">下载原图</view></view>
       <view class="photo-design-button" data-url="{{item.url}}" bindtap="designWithPhoto"><text>以本图开始设计</text><text>→</text></view>
     </view>
   </view>

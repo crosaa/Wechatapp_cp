@@ -1,5 +1,6 @@
 const { fetchProduct, readProductSnapshot, refreshDataVersion, thumbnailImage } = require('../../common/api')
 const { firstImage, appShare, timelineShare, favoriteShare, productTitle, productQuery } = require('../../common/share')
+const { saveOriginalImage } = require('../../common/image')
 
 const DETAIL_BATCH_SIZE = 6
 const PREVIEW_IMAGE_SIZE = 2000
@@ -102,52 +103,7 @@ Page({
     wx.previewImage({ current, urls, showmenu: true })
   },
   downloadOriginal(event) {
-    const url = event.currentTarget.dataset.url
-    if (!url || this.downloadingOriginal) return
-    this.downloadingOriginal = true
-    wx.showLoading({ title: '下载原图中', mask: true })
-    const finish = () => {
-      this.downloadingOriginal = false
-      wx.hideLoading()
-    }
-    wx.downloadFile({
-      url,
-      timeout: 30000,
-      success: result => {
-        if (result.statusCode < 200 || result.statusCode >= 300 || !result.tempFilePath) {
-          finish()
-          wx.showToast({ title: '原图下载失败', icon: 'none' })
-          return
-        }
-        wx.saveImageToPhotosAlbum({
-          filePath: result.tempFilePath,
-          success: () => {
-            finish()
-            wx.showToast({ title: '原图已保存', icon: 'success' })
-          },
-          fail: error => {
-            finish()
-            const denied = /auth deny|auth denied|authorize:fail/i.test(error.errMsg || '')
-            if (!denied) {
-              wx.showToast({ title: '保存原图失败', icon: 'none' })
-              return
-            }
-            wx.showModal({
-              title: '需要相册权限',
-              content: '请在设置中允许保存图片到相册。',
-              confirmText: '去设置',
-              success: modal => {
-                if (modal.confirm) wx.openSetting()
-              }
-            })
-          }
-        })
-      },
-      fail: () => {
-        finish()
-        wx.showToast({ title: '原图下载失败', icon: 'none' })
-      }
-    })
+    saveOriginalImage(event.currentTarget.dataset.url)
   },
   onShareAppMessage() {
     const query = productQuery(this.data.product)

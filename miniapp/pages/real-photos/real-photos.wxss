@@ -14,7 +14,7 @@
 .photo-card-image { width: 100%; height: 290rpx; background: #ece9e2; }
 .photo-card-meta { display: flex; justify-content: space-between; padding: 16rpx 14rpx 12rpx; }
 .photo-card-meta text:first-child { color: #4f5f52; font-size: 21rpx; font-weight: 800; }
-.photo-card-meta text:last-child { color: #aaa59d; font-size: 17rpx; }
+.photo-card-meta view:last-child { padding: 5rpx 9rpx; border-radius: 8rpx; background: #f1eee7; color: #746f66; font-size: 17rpx; }
 .photo-design-button {
   display: flex;
   align-items: center;
