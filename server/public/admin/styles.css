@@ -366,6 +366,9 @@ td { padding: 15px 20px; border-top: 1px solid #eef0eb; font-size: 13px; vertica
 .price-decimal { font-size: 13px; line-height: 1; }
 .price-unit { color: #858b84; font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 11px; font-weight: 500; }
 .form-grid input[name="price"] { font-family: "DIN Alternate", "Roboto Condensed", "Arial Narrow", "Segoe UI", Arial, sans-serif; font-size: 16px; font-variant-numeric: tabular-nums lining-nums; font-feature-settings: "tnum" 1, "lnum" 1; font-weight: 750; text-align: right; }
+.form-grid input[name="price"] { appearance: textfield; -moz-appearance: textfield; }
+.form-grid input[name="price"]::-webkit-outer-spin-button,
+.form-grid input[name="price"]::-webkit-inner-spin-button { margin: 0; appearance: none; -webkit-appearance: none; }
 .stock-badge { display: inline-flex; min-width: 70px; justify-content: center; padding: 6px 9px; border-radius: 18px; font-size: 11px; font-weight: 750; }
 .stock-badge.normal { background: #edf3ee; color: #34664d; }
 .stock-badge.low { background: #fff2da; color: #956517; }
