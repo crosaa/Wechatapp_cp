@@ -379,10 +379,15 @@ export function buildWarehouseInventoryPlan(rows, products, options = {}) {
   if (errors.length) throw new Error(errors.slice(0, 12).join('；'))
   const groups = [...groupsByKey.values()].map(group => ({ ...group, sizes: [...group.sizes] }))
   const productById = new Map(products.map(product => [Number(product.id), product]))
-  const productMappings = new Map((Array.isArray(options.productMappings) ? options.productMappings : []).map(mapping => [
-    `${clean(mapping.sourceName)}\u0000${clean(mapping.sourceInternalCode)}`,
-    { productId: Number(mapping.productId), targetColor: clean(mapping.targetColor) }
-  ]))
+  const productMappings = new Map()
+  for (const mapping of Array.isArray(options.productMappings) ? options.productMappings : []) {
+    const key = `${clean(mapping.sourceName)}\u0000${clean(mapping.sourceInternalCode)}`
+    if (!productMappings.has(key)) productMappings.set(key, [])
+    productMappings.get(key).push({
+      productId: Number(mapping.productId),
+      targetColor: clean(mapping.targetColor)
+    })
+  }
   const productMappingsByName = new Map()
   for (const mapping of Array.isArray(options.productMappings) ? options.productMappings : []) {
     const sourceName = clean(mapping.sourceName)
@@ -390,7 +395,8 @@ export function buildWarehouseInventoryPlan(rows, products, options = {}) {
     if (!productMappingsByName.has(sourceName)) productMappingsByName.set(sourceName, [])
     productMappingsByName.get(sourceName).push({
       productId: Number(mapping.productId),
-      targetColor: clean(mapping.targetColor)
+      targetColor: clean(mapping.targetColor),
+      sourceInternalCode: clean(mapping.sourceInternalCode)
     })
   }
   const plans = new Map(products.map(product => [product.id, {
@@ -416,20 +422,28 @@ export function buildWarehouseInventoryPlan(rows, products, options = {}) {
     const best = ranked[0]
     const fullCodeMatches = ranked.filter(item => hasCodeEvidence(item.reasons, 230))
     const nameOnlyMappings = productMappingsByName.get(group.name) || []
+    const exactManualMappings = productMappings.get(group.key) || []
     const nameOnlyProductIds = new Set(nameOnlyMappings.map(mapping => mapping.productId))
-    const nameOnlyTargetColors = new Set(nameOnlyMappings.map(mapping => mapping.targetColor).filter(Boolean))
-    const manualMapping = productMappings.get(group.key) || (
-      nameOnlyProductIds.size === 1
-        ? {
-            productId: [...nameOnlyProductIds][0],
-            targetColor: nameOnlyTargetColors.size === 1 ? [...nameOnlyTargetColors][0] : ''
-          }
-        : null
-    )
-    const mappedProductId = manualMapping?.productId || 0
-    const manuallyMappedProduct = productById.get(mappedProductId)
-    const selected = manuallyMappedProduct
-      ? [{ product: manuallyMappedProduct, score: Number.MAX_SAFE_INTEGER, reasons: ['manual:mapping'] }]
+    const nameOnlyInternalCodes = new Set(nameOnlyMappings.map(mapping => mapping.sourceInternalCode))
+    let fallbackManualMappings = []
+    if (nameOnlyProductIds.size === 1) {
+      const targetColors = new Set(nameOnlyMappings.map(mapping => mapping.targetColor).filter(Boolean))
+      fallbackManualMappings = [{
+        productId: [...nameOnlyProductIds][0],
+        targetColor: targetColors.size === 1 ? [...targetColors][0] : ''
+      }]
+    } else if (nameOnlyProductIds.size <= 2 && nameOnlyInternalCodes.size === 1) {
+      fallbackManualMappings = nameOnlyMappings
+    }
+    const manualMappings = (exactManualMappings.length ? exactManualMappings : fallbackManualMappings)
+      .filter((mapping, index, items) => mapping.productId > 0 && items.findIndex(item => item.productId === mapping.productId) === index)
+      .slice(0, 2)
+    const manualSelections = manualMappings
+      .map(mapping => ({ mapping, product: productById.get(mapping.productId) }))
+      .filter(selection => selection.product)
+    const manualMappingByProductId = new Map(manualSelections.map(selection => [selection.product.id, selection.mapping]))
+    const selected = manualSelections.length
+      ? manualSelections.map(selection => ({ product: selection.product, score: Number.MAX_SAFE_INTEGER, reasons: ['manual:mapping'] }))
       : [best]
     const selectedIds = new Set(selected.map(item => item.product.id))
     const next = ranked.find(item => !selectedIds.has(item.product.id))
@@ -440,7 +454,7 @@ export function buildWarehouseInventoryPlan(rows, products, options = {}) {
     const compatibleFullCodeMatches = fullCodeMatches.filter(item => !item.reasons.some(reason => reason.startsWith('type-conflict:') || reason.startsWith('variant-conflict:')))
     const decisiveName = best.reasons.some(reason => reason === 'name:exact' || reason === 'core:exact' || reason === 'name:contains' || reason === 'core:contains')
     const ambiguousSameCode = compatibleFullCodeMatches.length > 1 && !decisiveName && margin < 18
-    const automatic = Boolean(manuallyMappedProduct) || (!hasConflict && !ambiguousSameCode && (compatibleFullCodeMatches.length === 1 || (best.score >= 128 && (margin >= 18 || best.score >= 230)) || (strongCode && best.score >= 135 && margin >= 6) || selectedIncludesIndependent))
+    const automatic = manualSelections.length > 0 || (!hasConflict && !ambiguousSameCode && (compatibleFullCodeMatches.length === 1 || (best.score >= 128 && (margin >= 18 || best.score >= 230)) || (strongCode && best.score >= 135 && margin >= 6) || selectedIncludesIndependent))
     if (!automatic) {
       ignoredGroups += 1
       for (const row of group.rows) {
@@ -460,12 +474,13 @@ export function buildWarehouseInventoryPlan(rows, products, options = {}) {
       }
       continue
     }
-    if (manuallyMappedProduct) manualMappedGroups += 1
+    if (manualSelections.length) manualMappedGroups += 1
     acceptedGroups += 1
     for (const productId of selectedIds) {
       const plan = plans.get(productId)
       plan.matchedGroups += 1
-      const manualTargetColor = manuallyMappedProduct ? clean(manualMapping?.targetColor) : ''
+      const manualMapping = manualMappingByProductId.get(productId)
+      const manualTargetColor = manualMapping ? clean(manualMapping.targetColor) : ''
       const color = manualTargetColor
         ? (plan.product.colors.includes(manualTargetColor) ? manualTargetColor : '')
         : mapSourceColor(plan.product, group.name)
@@ -525,7 +540,7 @@ export function buildWarehouseInventoryPlan(rows, products, options = {}) {
           productId: plan.product.id,
           productCode: plan.product.code,
           productName: plan.product.name,
-          matchMethod: manuallyMappedProduct ? 'manual' : 'automatic',
+          matchMethod: manualMapping ? 'manual' : 'automatic',
           matchedRows,
           matchedQuantity,
           sourceRows: group.rows.length,

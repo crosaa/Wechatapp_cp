@@ -853,20 +853,42 @@ try {
   const unmatchedSource = mappingList.body.data.sources.find(source => source.sourceName === '人工库存别名黑色ABC')
   assert.ok(unmatchedSource)
   assert.equal(unmatchedSource.mapping, null)
+  assert.deepEqual(unmatchedSource.mappings, [])
   assert.equal(unmatchedSource.rowCount, 1)
+
+  const similarProduct = await request('/api/admin/products', {
+    method: 'POST',
+    body: JSON.stringify({
+      code: 'TEST-002',
+      name: '已上架测试商品相似款',
+      category: '圆领T恤',
+      price: 99,
+      unit: '件',
+      fit: '标准版型',
+      status: 'published',
+      colors: ['黑色'],
+      sizes: ['M', 'L'],
+      colorSizeStocks: { 黑色: { M: 0, L: 0 } }
+    })
+  }, cookie)
+  assert.equal(similarProduct.response.status, 201)
 
   const savedMapping = await request('/api/admin/inventory/mappings', {
     method: 'PUT',
     body: JSON.stringify({
       sourceName: '人工库存别名黑色ABC',
       sourceInternalCode: '无匹配编码',
-      productId: created.body.data.id,
-      targetColor: '黑色'
+      mappings: [
+        { productId: created.body.data.id, targetColor: '黑色' },
+        { productId: similarProduct.body.data.id, targetColor: '黑色' }
+      ]
     })
   }, cookie)
   assert.equal(savedMapping.response.status, 200)
   assert.equal(savedMapping.body.data.productCode, 'TEST-001')
   assert.equal(savedMapping.body.data.targetColor, '黑色')
+  assert.equal(savedMapping.body.data.mappings.length, 2)
+  assert.deepEqual(savedMapping.body.data.mappings.map(mapping => mapping.productCode), ['TEST-001', 'TEST-002'])
 
   const savedHistoricalMapping = await request('/api/admin/inventory/mappings', {
     method: 'PUT',
@@ -891,7 +913,7 @@ try {
   assert.equal(mappedWarehouseImport.response.status, 200)
   assert.equal(mappedWarehouseImport.body.data.applied, true)
   assert.equal(mappedWarehouseImport.body.data.manualMappedGroups, 1)
-  assert.equal(mappedWarehouseImport.body.data.matchedProducts, 1)
+  assert.equal(mappedWarehouseImport.body.data.matchedProducts, 2)
   assert.equal(mappedWarehouseImport.body.data.unmatchedRowsCount, 0)
   assert.equal(mappedWarehouseImport.body.data.unmatchedSourceCount, 0)
   const noStaleUnmatchedDetails = await request('/api/admin/inventory/reports/latest/details', {}, cookie)
@@ -907,6 +929,9 @@ try {
   const manuallyMappedProduct = afterMappedImport.body.data.find(product => product.code === 'TEST-001')
   assert.equal(manuallyMappedProduct.colorSizeStocks.黑色.M, 12)
   assert.equal(manuallyMappedProduct.stock, 12)
+  const manuallyMappedSimilarProduct = afterMappedImport.body.data.find(product => product.code === 'TEST-002')
+  assert.equal(manuallyMappedSimilarProduct.colorSizeStocks.黑色.M, 12)
+  assert.equal(manuallyMappedSimilarProduct.stock, 12)
 
   const savedSecondColorMapping = await request('/api/admin/inventory/mappings', {
     method: 'PUT',
@@ -937,6 +962,9 @@ try {
   assert.equal(twoColorProduct.colorSizeStocks.黑色.M, 12)
   assert.equal(twoColorProduct.colorSizeStocks.白色.M, 5)
   assert.equal(twoColorProduct.stock, 17)
+  const twoMappedSimilarProduct = afterTwoColorImport.body.data.find(product => product.code === 'TEST-002')
+  assert.equal(twoMappedSimilarProduct.colorSizeStocks.黑色.M, 12)
+  assert.equal(twoMappedSimilarProduct.stock, 12)
 
   const deletedMapping = await request('/api/admin/inventory/mappings', {
     method: 'DELETE',
@@ -954,6 +982,8 @@ try {
     body: JSON.stringify({ sourceName: '历史库存名称（已不在最新未匹配表）', sourceInternalCode: '' })
   }, cookie)
   assert.equal(deletedHistoricalMapping.response.status, 200)
+  const removedSimilarProduct = await request(`/api/admin/products/${similarProduct.body.data.id}`, { method: 'DELETE' }, cookie)
+  assert.equal(removedSimilarProduct.response.status, 200)
 
   const deletedAssignedCategory = await request(`/api/admin/categories/${testCategory.id}`, { method: 'DELETE' }, cookie)
   assert.equal(deletedAssignedCategory.response.status, 200)

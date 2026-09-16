@@ -33,6 +33,7 @@ import {
   reorderCategories,
   reorderCategoryProducts,
   reorderProducts,
+  replaceInventoryProductMappings,
   upsertInventoryProductMapping,
   updateAdminUserPassword,
   updateCategory,
@@ -603,10 +604,12 @@ function inventoryMappingKey(sourceName, sourceInternalCode) {
 }
 
 function inventoryMappingSources(details, mappings, matches) {
-  const mappingByKey = new Map(mappings.map(mapping => [
-    inventoryMappingKey(mapping.sourceName, mapping.sourceInternalCode),
-    mapping
-  ]))
+  const mappingsByKey = new Map()
+  for (const mapping of mappings) {
+    const key = inventoryMappingKey(mapping.sourceName, mapping.sourceInternalCode)
+    if (!mappingsByKey.has(key)) mappingsByKey.set(key, [])
+    mappingsByKey.get(key).push(mapping)
+  }
   const matchesByKey = new Map()
   for (const match of matches) {
     const key = inventoryMappingKey(match.sourceName, match.sourceInternalCode)
@@ -691,16 +694,20 @@ function inventoryMappingSources(details, mappings, matches) {
       })
     }
   }
-  return [...grouped.entries()].map(([key, group]) => ({
-    ...group,
-    reasons: [...group.reasons],
-    colors: [...group.colors],
-    sizes: [...group.sizes],
-    mapping: mappingByKey.get(key) || null,
-    matches: matchesByKey.get(key) || []
-  })).sort((left, right) => {
-    const leftMatched = Boolean(left.mapping || left.matches.length)
-    const rightMatched = Boolean(right.mapping || right.matches.length)
+  return [...grouped.entries()].map(([key, group]) => {
+    const sourceMappings = mappingsByKey.get(key) || []
+    return {
+      ...group,
+      reasons: [...group.reasons],
+      colors: [...group.colors],
+      sizes: [...group.sizes],
+      mappings: sourceMappings,
+      mapping: sourceMappings[0] || null,
+      matches: matchesByKey.get(key) || []
+    }
+  }).sort((left, right) => {
+    const leftMatched = Boolean(left.mappings.length || left.matches.length)
+    const rightMatched = Boolean(right.mappings.length || right.matches.length)
     if (leftMatched !== rightMatched) return leftMatched ? 1 : -1
     if (left.fromLatestReport !== right.fromLatestReport) return left.fromLatestReport ? -1 : 1
     return left.sourceName.localeCompare(right.sourceName, 'zh-CN')
@@ -1281,7 +1288,13 @@ async function handleApi(req, res, url) {
   }
 
   if (url.pathname === '/api/admin/inventory/mappings' && req.method === 'PUT') {
-    json(res, 200, { data: upsertInventoryProductMapping(await readJson(req)) })
+    const body = await readJson(req)
+    if (Array.isArray(body.mappings)) {
+      const mappings = replaceInventoryProductMappings(body)
+      json(res, 200, { data: { ...(mappings[0] || {}), mappings } })
+    } else {
+      json(res, 200, { data: upsertInventoryProductMapping(body) })
+    }
     return true
   }
 

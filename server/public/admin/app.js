@@ -516,7 +516,8 @@ function inventoryMappingFilteredSources() {
   const status = $('#inventoryMappingStatus').value
   const reason = $('#inventoryMappingReason').value
   return sources.filter(source => {
-    const manuallyMatched = Boolean(source.mapping)
+    const manualMappings = source.mappings?.length ? source.mappings : source.mapping ? [source.mapping] : []
+    const manuallyMatched = manualMappings.length > 0
     const automaticallyMatched = !manuallyMatched && Boolean((source.matches || []).length)
     const matched = manuallyMatched || automaticallyMatched
     if (status === 'mapped' && !matched) return false
@@ -531,8 +532,7 @@ function inventoryMappingFilteredSources() {
       ...(source.reasons || []),
       source.candidateCode,
       source.candidateName,
-      source.mapping?.productCode,
-      source.mapping?.productName,
+      ...manualMappings.flatMap(mapping => [mapping.productCode, mapping.productName]),
       ...(source.matches || []).flatMap(match => [match.productCode, match.productName])
     ].some(value => String(value ?? '').toLowerCase().includes(query))
   }).sort((left, right) => {
@@ -554,24 +554,30 @@ function renderInventoryMappings() {
   const visible = filtered.slice(start, start + state.inventoryMappingPageSize)
   $('#inventoryMappingRows').innerHTML = visible.map(source => {
     const token = inventorySourceToken(source.sourceName, source.sourceInternalCode)
-    const mapping = source.mapping
+    const mappings = source.mappings?.length ? source.mappings : source.mapping ? [source.mapping] : []
     const automaticMatches = source.matches || []
-    const mappedProduct = mapping ? data.products.find(product => product.id === mapping.productId) : null
-    const automaticProduct = !mapping && automaticMatches.length === 1
+    const automaticProduct = !mappings.length && automaticMatches.length === 1
       ? data.products.find(product => product.id === automaticMatches[0].productId)
       : null
-    const selectedProduct = mappedProduct || automaticProduct
-    const selectedColor = mapping?.targetColor || (automaticMatches.length === 1 ? automaticMatches[0].color : '')
-    const currentValue = mappedProduct
-      ? productOptionLabel(mappedProduct)
-      : automaticProduct ? productOptionLabel(automaticProduct) : ''
+    const slots = [0, 1].map(index => {
+      const mapping = mappings[index] || null
+      const product = mapping
+        ? data.products.find(item => item.id === mapping.productId)
+        : index === 0 ? automaticProduct : null
+      return {
+        mapping,
+        product,
+        selectedColor: mapping?.targetColor || (index === 0 && automaticMatches.length === 1 ? automaticMatches[0].color : ''),
+        currentValue: product ? productOptionLabel(product) : ''
+      }
+    })
     const reasonText = (source.reasons || []).join('；') || (
       source.fromLatestImport
         ? `本次已成功写入 ${automaticMatches.reduce((sum, match) => sum + Number(match.matchedRows || 0), 0)} 行`
         : source.fromLatestReport ? '未说明原因' : '历史人工对应，不在最近一次库存表中'
     )
-    const currentMappingHtml = mapping
-      ? `<div class="inventory-mapped-product"><span>人工对应</span><strong>${escapeHtml(mapping.productName)}</strong><small>款号：${escapeHtml(mapping.productCode)}${mapping.targetColor ? ` · 颜色：${escapeHtml(mapping.targetColor)}` : ''} · 后续导入优先采用</small></div>`
+    const currentMappingHtml = mappings.length
+      ? `<div class="inventory-mapped-product"><span>人工对应 ${mappings.length} 个商品</span>${mappings.map((mapping, index) => `<div class="inventory-mapped-product-item"><strong>${index + 1}. ${escapeHtml(mapping.productName)}</strong><small>款号：${escapeHtml(mapping.productCode)}${mapping.targetColor ? ` · 颜色：${escapeHtml(mapping.targetColor)}` : ''}</small></div>`).join('')}<small>后续导入会同时更新以上商品</small></div>`
       : automaticMatches.length
         ? `<div class="inventory-mapped-product automatic"><span>自动匹配</span>${automaticMatches.map(match => `<strong>${escapeHtml(match.productName)}</strong><small>款号：${escapeHtml(match.productCode)} · ${Number(match.matchedRows || 0)} 行已写入${match.color ? ` · ${escapeHtml(match.color)}` : ''}</small>`).join('')}</div>`
         : `<div class="inventory-unmapped-state"><span>待人工选择</span>${source.candidateName ? `<small>系统候选：${escapeHtml(source.candidateCode)} ｜ ${escapeHtml(source.candidateName)}</small>` : ''}</div>`
@@ -594,28 +600,34 @@ function renderInventoryMappings() {
           ${currentMappingHtml}
         </td>
         <td>
-          <label class="inventory-product-search">
-            <input type="search" value="${escapeHtml(currentValue)}" placeholder="输入任意一段款号或商品名称" autocomplete="off" />
-            <small>可搜索全部 ${data.products.length.toLocaleString('zh-CN')} 个数据库商品</small>
-          </label>
+          <div class="inventory-product-search-list">
+            ${slots.map((slot, index) => `<label class="inventory-product-search" data-mapping-slot="${index}">
+              <span>对应商品 ${index + 1}${index === 1 ? '（可选）' : ''}</span>
+              <input type="search" value="${escapeHtml(slot.currentValue)}" placeholder="输入任意一段款号或商品名称" autocomplete="off" />
+              <small>${index === 0 ? `可搜索全部 ${data.products.length.toLocaleString('zh-CN')} 个数据库商品` : '不需要第二个商品时留空'}</small>
+            </label>`).join('')}
+          </div>
         </td>
         <td>
-          <label class="inventory-color-select">
-            <select>${inventoryColorOptions(selectedProduct, selectedColor)}</select>
-            <small>每个 Excel 颜色独立对应</small>
-          </label>
+          <div class="inventory-color-select-list">
+            ${slots.map((slot, index) => `<label class="inventory-color-select" data-mapping-slot="${index}">
+              <span>商品 ${index + 1} 颜色</span>
+              <select>${inventoryColorOptions(slot.product, slot.selectedColor)}</select>
+              <small>${index === 0 ? '每个 Excel 颜色独立对应' : '与第二个商品分别选择'}</small>
+            </label>`).join('')}
+          </div>
         </td>
         <td>
           <div class="inventory-mapping-actions">
-            <button type="button" class="primary-button" data-mapping-action="save">${mapping ? '更新人工对应' : automaticMatches.length ? '改为人工对应' : '保存对应'}</button>
-            ${mapping ? '<button type="button" class="secondary-button danger" data-mapping-action="delete">删除对应</button>' : ''}
+            <button type="button" class="primary-button" data-mapping-action="save">${mappings.length ? '更新人工对应' : automaticMatches.length ? '改为人工对应' : '保存对应'}</button>
+            ${mappings.length ? '<button type="button" class="secondary-button danger" data-mapping-action="delete">删除对应</button>' : ''}
           </div>
         </td>
       </tr>
     `
   }).join('')
-  const mappedCount = data.sources.filter(source => source.mapping || (source.matches || []).length).length
-  const pendingCount = data.sources.filter(source => !source.mapping && !(source.matches || []).length).length
+  const mappedCount = data.sources.filter(source => (source.mappings || []).length || source.mapping || (source.matches || []).length).length
+  const pendingCount = data.sources.filter(source => !(source.mappings || []).length && !source.mapping && !(source.matches || []).length).length
   $('#inventoryMappingSourceCount').textContent = data.sources.filter(source => source.fromLatestReport || source.fromLatestImport).length.toLocaleString('zh-CN')
   $('#inventoryMappingPendingCount').textContent = pendingCount.toLocaleString('zh-CN')
   $('#inventoryMappingSavedCount').textContent = mappedCount.toLocaleString('zh-CN')
@@ -1933,8 +1945,9 @@ $('#inventoryMappingRows').addEventListener('input', event => {
   const input = event.target.closest('.inventory-product-search input')
   if (!input) return
   const row = input.closest('[data-inventory-source]')
+  const slot = input.closest('.inventory-product-search').dataset.mappingSlot
   const product = findInventoryMappingProduct(input.value)
-  row.querySelector('.inventory-color-select select').innerHTML = inventoryColorOptions(
+  row.querySelector(`.inventory-color-select[data-mapping-slot="${slot}"] select`).innerHTML = inventoryColorOptions(
     product,
     product?.colors?.length === 1 ? product.colors[0] : ''
   )
@@ -1977,8 +1990,9 @@ $('#inventoryProductSearchPopup').addEventListener('click', event => {
   if (!product) return
   const input = inventoryProductSearchInput
   const row = input.closest('[data-inventory-source]')
+  const slot = input.closest('.inventory-product-search').dataset.mappingSlot
   input.value = productOptionLabel(product)
-  row.querySelector('.inventory-color-select select').innerHTML = inventoryColorOptions(
+  row.querySelector(`.inventory-color-select[data-mapping-slot="${slot}"] select`).innerHTML = inventoryColorOptions(
     product,
     product.colors?.length === 1 ? product.colors[0] : ''
   )
@@ -2016,22 +2030,35 @@ $('#inventoryMappingRows').addEventListener('click', async event => {
   button.disabled = true
   try {
     if (button.dataset.mappingAction === 'save') {
-      const product = findInventoryMappingProduct(row.querySelector('.inventory-product-search input').value)
-      if (!product) throw new Error('请从搜索选项中选择一个明确的数据库商品')
-      const targetColor = row.querySelector('.inventory-color-select select').value
-      if ((product.colors || []).length > 1 && !targetColor) throw new Error('该商品有多个颜色，请选择这个 Excel 名称对应的具体颜色')
+      const mappings = [...row.querySelectorAll('.inventory-product-search')].map((label, index) => {
+        const value = label.querySelector('input').value.trim()
+        if (!value) return null
+        const product = findInventoryMappingProduct(value)
+        if (!product) throw new Error(`请从搜索选项中明确选择对应商品 ${index + 1}`)
+        const targetColor = row.querySelector(`.inventory-color-select[data-mapping-slot="${index}"] select`).value
+        if ((product.colors || []).length > 1 && !targetColor) throw new Error(`对应商品 ${index + 1} 有多个颜色，请选择具体颜色`)
+        return { productId: product.id, targetColor, product }
+      }).filter(Boolean)
+      if (!mappings.length) throw new Error('请至少选择一个要对应的小程序商品')
+      if (new Set(mappings.map(mapping => mapping.productId)).size !== mappings.length) throw new Error('两个对应位置不能选择同一个小程序商品')
       const result = await api('/api/admin/inventory/mappings', {
         method: 'PUT',
-        body: JSON.stringify({ sourceName, sourceInternalCode, productId: product.id, targetColor })
+        body: JSON.stringify({
+          sourceName,
+          sourceInternalCode,
+          mappings: mappings.map(({ productId, targetColor }) => ({ productId, targetColor }))
+        })
       })
-      source.mapping = result.data
-      toast(`已永久记住：${product.code} ｜ ${product.name}${result.data.targetColor ? ` ｜ ${result.data.targetColor}` : ''}；下次导入自动采用`)
+      source.mappings = result.data.mappings || []
+      source.mapping = source.mappings[0] || null
+      toast(`已永久记住 ${source.mappings.length} 个商品；下次导入会同时更新`)
     } else {
       if (!confirm(`确定删除“${sourceName}”的库存对应关系吗？`)) return
       await api('/api/admin/inventory/mappings', {
         method: 'DELETE',
         body: JSON.stringify({ sourceName, sourceInternalCode })
       })
+      source.mappings = []
       source.mapping = null
       toast('对应关系已删除')
     }

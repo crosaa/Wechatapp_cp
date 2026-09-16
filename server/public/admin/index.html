@@ -86,7 +86,7 @@
           <div>
             <p class="eyebrow">INVENTORY NAME MAPPING</p>
             <h2>库存名称对应关系</h2>
-            <p>把库存 Excel 中的每个颜色名称分别对应到小程序数据库商品及具体颜色。保存后从下一次“覆盖导入库存”开始优先采用，不会修改当前库存。</p>
+            <p>把库存 Excel 中的每个颜色名称分别对应到一至两个小程序商品及具体颜色。保存后从下一次“覆盖导入库存”开始同时更新，不会修改当前库存。</p>
           </div>
           <div class="inventory-mapping-head-actions">
             <button type="button" class="secondary-button" id="inventoryMappingDownload">↓ 下载未匹配 Excel</button>
@@ -102,7 +102,7 @@
         </div>
         <div class="inventory-mapping-notice">
           <strong>对应规则</strong>
-          <span>同一“来源名称 + 来源内部编码”对应一个数据库商品和一个具体颜色。同款黑色、白色等可分别指向同一商品的不同颜色；随后继续按尺码写入，任何无法确认的颜色或尺码仍会保留在未匹配表中。</span>
+          <span>同一“来源名称 + 来源内部编码”最多对应两个小程序商品，每个商品分别选择具体颜色。适用于 Excel 里一个库存名称对应小程序中两个名称相近商品的情况；随后继续按尺码写入，无法确认的颜色或尺码仍会保留在未匹配表中。</span>
         </div>
         <div class="inventory-mapping-toolbar">
           <label class="search-control"><span>⌕</span><input id="inventoryMappingSearch" placeholder="搜索 Excel 名称、内部编码、候选商品或已对应商品" /></label>
@@ -121,7 +121,7 @@
         <div class="inventory-mapping-table-wrap">
           <table class="inventory-mapping-table">
             <thead>
-              <tr><th>库存 Excel 名称</th><th>本次未写入明细</th><th>当前对应</th><th>搜索并选择数据库商品</th><th>对应颜色</th><th>操作</th></tr>
+              <tr><th>库存 Excel 名称</th><th>本次未写入明细</th><th>当前对应</th><th>选择最多两个小程序商品</th><th>分别对应颜色</th><th>操作</th></tr>
             </thead>
             <tbody id="inventoryMappingRows"></tbody>
           </table>

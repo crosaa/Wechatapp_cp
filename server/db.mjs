@@ -94,13 +94,42 @@ db.exec(`
     target_color TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    PRIMARY KEY (source_name, source_internal_code)
+    PRIMARY KEY (source_name, source_internal_code, product_id)
   )
 `)
 
-const inventoryMappingColumns = db.prepare('PRAGMA table_info(inventory_product_mappings)').all().map(column => column.name)
+let inventoryMappingTableInfo = db.prepare('PRAGMA table_info(inventory_product_mappings)').all()
+const inventoryMappingColumns = inventoryMappingTableInfo.map(column => column.name)
 if (!inventoryMappingColumns.includes('target_color')) {
   db.exec("ALTER TABLE inventory_product_mappings ADD COLUMN target_color TEXT NOT NULL DEFAULT ''")
+}
+
+inventoryMappingTableInfo = db.prepare('PRAGMA table_info(inventory_product_mappings)').all()
+const inventoryMappingPrimaryKey = inventoryMappingTableInfo
+  .filter(column => Number(column.pk) > 0)
+  .sort((left, right) => Number(left.pk) - Number(right.pk))
+  .map(column => column.name)
+if (inventoryMappingPrimaryKey.join(',') !== 'source_name,source_internal_code,product_id') {
+  db.exec(`
+    BEGIN IMMEDIATE;
+    CREATE TABLE inventory_product_mappings_next (
+      source_name TEXT NOT NULL,
+      source_internal_code TEXT NOT NULL DEFAULT '',
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      target_color TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (source_name, source_internal_code, product_id)
+    );
+    INSERT OR IGNORE INTO inventory_product_mappings_next (
+      source_name, source_internal_code, product_id, target_color, created_at, updated_at
+    )
+    SELECT source_name, source_internal_code, product_id, target_color, created_at, updated_at
+    FROM inventory_product_mappings;
+    DROP TABLE inventory_product_mappings;
+    ALTER TABLE inventory_product_mappings_next RENAME TO inventory_product_mappings;
+    COMMIT;
+  `)
 }
 
 db.exec(`
@@ -892,7 +921,7 @@ export function listInventoryProductMappings() {
       product.status AS product_status
     FROM inventory_product_mappings AS mapping
     JOIN products AS product ON product.id = mapping.product_id
-    ORDER BY mapping.updated_at DESC, mapping.source_name COLLATE NOCASE ASC
+    ORDER BY mapping.updated_at DESC, mapping.source_name COLLATE NOCASE ASC, product.code COLLATE NOCASE ASC
   `).all().map(row => ({
     sourceName: row.source_name,
     sourceInternalCode: row.source_internal_code,
@@ -988,28 +1017,69 @@ export function replaceInventoryImportMatches(matches = [], options = {}) {
 }
 
 export function upsertInventoryProductMapping(input = {}) {
+  return replaceInventoryProductMappings({
+    sourceName: input.sourceName,
+    sourceInternalCode: input.sourceInternalCode,
+    mappings: [{ productId: input.productId, targetColor: input.targetColor }]
+  })[0]
+}
+
+export function replaceInventoryProductMappings(input = {}) {
   const sourceName = cleanInventoryMappingText(input.sourceName)
   const sourceInternalCode = cleanInventoryMappingText(input.sourceInternalCode, 120)
-  const productId = Number(input.productId)
   if (!sourceName) throw new Error('来源商品名称不能为空')
-  if (!Number.isInteger(productId) || productId <= 0) throw new Error('请选择要对应的数据库商品')
-  const product = getProduct(productId)
-  if (!product) throw new Error('所选数据库商品不存在')
-  let targetColor = cleanInventoryMappingText(input.targetColor, 120)
-  if (product.colors.length === 1 && !targetColor) targetColor = product.colors[0]
-  if (product.colors.length > 1 && !targetColor) throw new Error('该商品有多个颜色，请选择 Excel 名称对应的具体颜色')
-  if (targetColor && !product.colors.includes(targetColor)) throw new Error('所选颜色不属于该数据库商品，请重新选择')
+  const requestedMappings = Array.isArray(input.mappings) ? input.mappings : []
+  if (!requestedMappings.length) throw new Error('请至少选择一个要对应的数据库商品')
+  if (requestedMappings.length > 2) throw new Error('一个 Excel 库存名称最多对应两个小程序商品')
+
+  const seenProductIds = new Set()
+  const mappings = requestedMappings.map((mapping, index) => {
+    const productId = Number(mapping?.productId)
+    if (!Number.isInteger(productId) || productId <= 0) throw new Error(`第 ${index + 1} 个对应商品无效，请重新选择`)
+    if (seenProductIds.has(productId)) throw new Error('两个对应位置不能选择同一个小程序商品')
+    seenProductIds.add(productId)
+    const product = getProduct(productId)
+    if (!product) throw new Error(`第 ${index + 1} 个小程序商品不存在`)
+    let targetColor = cleanInventoryMappingText(mapping?.targetColor, 120)
+    if (product.colors.length === 1 && !targetColor) targetColor = product.colors[0]
+    if (product.colors.length > 1 && !targetColor) throw new Error(`第 ${index + 1} 个商品有多个颜色，请选择具体颜色`)
+    if (targetColor && !product.colors.includes(targetColor)) throw new Error(`第 ${index + 1} 个商品所选颜色不存在，请重新选择`)
+    return { productId, targetColor }
+  })
+
+  const existingCreatedAt = new Map(db.prepare(`
+    SELECT product_id, created_at
+    FROM inventory_product_mappings
+    WHERE source_name = ? AND source_internal_code = ?
+  `).all(sourceName, sourceInternalCode).map(row => [Number(row.product_id), row.created_at]))
   const now = new Date().toISOString()
-  db.prepare(`
+  const insert = db.prepare(`
     INSERT INTO inventory_product_mappings (
       source_name, source_internal_code, product_id, target_color, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(source_name, source_internal_code) DO UPDATE SET
-      product_id = excluded.product_id,
-      target_color = excluded.target_color,
-      updated_at = excluded.updated_at
-  `).run(sourceName, sourceInternalCode, productId, targetColor, now, now)
-  return listInventoryProductMappings().find(item => item.sourceName === sourceName && item.sourceInternalCode === sourceInternalCode)
+  `)
+  db.exec('BEGIN IMMEDIATE')
+  try {
+    db.prepare(`
+      DELETE FROM inventory_product_mappings
+      WHERE source_name = ? AND source_internal_code = ?
+    `).run(sourceName, sourceInternalCode)
+    for (const mapping of mappings) {
+      insert.run(
+        sourceName,
+        sourceInternalCode,
+        mapping.productId,
+        mapping.targetColor,
+        existingCreatedAt.get(mapping.productId) || now,
+        now
+      )
+    }
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
+  return listInventoryProductMappings().filter(item => item.sourceName === sourceName && item.sourceInternalCode === sourceInternalCode)
 }
 
 export function deleteInventoryProductMapping(input = {}) {
