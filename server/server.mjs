@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
 import XLSX from 'xlsx'
 import { ensureImageSearchIndex, recognizeProductImage } from './image-recognition.mjs'
+import { imageRerankerStatus, rerankProductImageMatches } from './image-reranker.mjs'
 import {
   createAdminUser,
   createCategory,
@@ -59,10 +60,13 @@ const sessionSecret = process.env.SESSION_SECRET || randomBytes(32).toString('he
 const sessions = new Map()
 const sessionMaxAge = 8 * 60 * 60 * 1000
 const loginAttempts = new Map()
+const imageRecognitionWindows = new Map()
 const loginWindowMs = 15 * 60 * 1000
 const loginBlockMs = 15 * 60 * 1000
 const loginAccountFailureLimit = 5
 const loginIpFailureLimit = 30
+const imageRecognitionWindowMs = 60 * 1000
+const imageRecognitionRequestLimit = 15
 const publicDataInstanceId = randomUUID()
 let publicDataRevision = 1
 let publicProductSummaryCacheVersion = ''
@@ -201,6 +205,25 @@ function cleanupRemovedUploadReferences(previousValue) {
 function requestIp(req) {
   const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
   return forwarded || String(req.socket.remoteAddress || 'unknown').replace(/^::ffff:/, '')
+}
+
+function imageRecognitionRetryAfterSeconds(req, now = Date.now()) {
+  if (imageRecognitionWindows.size > 2_000) {
+    for (const [key, entry] of imageRecognitionWindows) {
+      if (now - entry.windowStartedAt >= imageRecognitionWindowMs) imageRecognitionWindows.delete(key)
+    }
+  }
+  const key = requestIp(req)
+  let entry = imageRecognitionWindows.get(key)
+  if (!entry || now - entry.windowStartedAt >= imageRecognitionWindowMs) {
+    entry = { count: 0, windowStartedAt: now }
+    imageRecognitionWindows.set(key, entry)
+  }
+  if (entry.count >= imageRecognitionRequestLimit) {
+    return Math.max(1, Math.ceil((entry.windowStartedAt + imageRecognitionWindowMs - now) / 1000))
+  }
+  entry.count += 1
+  return 0
 }
 
 function pruneLoginAttempts(now = Date.now()) {
@@ -1149,13 +1172,32 @@ async function handleApi(req, res, url) {
   }
 
   if (url.pathname === '/api/products/recognize' && req.method === 'POST') {
+    const retryAfter = imageRecognitionRetryAfterSeconds(req)
+    if (retryAfter > 0) {
+      json(res, 429, { error: '拍图识别请求过于频繁，请稍后再试', retryAfter }, {
+        'access-control-allow-origin': '*',
+        'retry-after': String(retryAfter)
+      })
+      return true
+    }
     const products = cachedVersionedData(
       'public:recognition-products',
       () => listProducts({ status: 'published' })
     )
     const body = await readJson(req, 12 * 1024 * 1024)
-    const matches = await recognizeProductImage(body.dataUrl, products, body.limit)
-    json(res, 200, { data: matches, total: matches.length }, { 'access-control-allow-origin': '*' })
+    const localMatches = await recognizeProductImage(body.dataUrl, products, body.limit)
+    const recognition = await rerankProductImageMatches(body.dataUrl, localMatches)
+    json(res, 200, {
+      data: recognition.matches,
+      total: recognition.matches.length,
+      recognition: {
+        method: recognition.method,
+        model: recognition.used ? recognition.model : '',
+        candidateCount: recognition.candidateCount || 0,
+        elapsedMs: recognition.elapsedMs || 0,
+        cached: Boolean(recognition.cached)
+      }
+    }, { 'access-control-allow-origin': '*' })
     return true
   }
 
@@ -1525,6 +1567,8 @@ server.listen(port, '127.0.0.1', () => {
   console.log(`普润制衣团购仓商品服务：http://127.0.0.1:${port}`)
   console.log(`商品管理后台：http://127.0.0.1:${port}/admin/`)
   console.log(`商品摘要缓存：${summaryCount} 款`)
+  const reranker = imageRerankerStatus()
+  console.log(reranker.configured ? `商品图片智能复核：${reranker.model}，候选 ${reranker.candidateLimit} 款` : '商品图片智能复核：未配置，使用本地识别')
   if (!process.env.ADMIN_PASSWORD) console.log('本地演示账号：admin / admin123（正式部署前必须修改）')
 })
 

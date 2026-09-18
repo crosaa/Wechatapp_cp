@@ -6,6 +6,20 @@ import { spawn } from 'node:child_process'
 import XLSX from 'xlsx'
 import sharp from 'sharp'
 import { buildWarehouseInventoryPlan } from './warehouse-inventory.mjs'
+import { applyImageRerank, parseImageRerankResponse } from './image-reranker.mjs'
+
+const parsedRerank = parseImageRerankResponse('```json\n{"best":"B","confidence":91,"ranking":["B","A"],"reason":"款式一致"}\n```', ['A', 'B'])
+assert.deepEqual(parsedRerank.ranking, ['B', 'A'])
+assert.equal(parsedRerank.confidence, 91)
+const rerankedMatches = applyImageRerank(
+  [{ id: 1, name: '一号' }, { id: 2, name: '二号' }, { id: 3, name: '三号' }],
+  [{ label: 'A', match: { id: 1, name: '一号' } }, { label: 'B', match: { id: 2, name: '二号' } }],
+  parsedRerank
+)
+assert.deepEqual(rerankedMatches.map(match => match.id), [2, 1, 3])
+assert.equal(rerankedMatches[0].aiConfidence, 91)
+assert.equal(rerankedMatches[0].recognitionMethod, 'gemini-reranked')
+assert.throws(() => parseImageRerankResponse('not-json', ['A']), /未返回 JSON/)
 
 const colorCodePlan = buildWarehouseInventoryPlan([
   { name: '8288黑色（索罗纳）-XF', size: 'S', quantity: 1, internalCode: '', rowNumber: 2 },
@@ -102,6 +116,8 @@ const child = spawn(process.execPath, ['server/server.mjs'], {
     ADMIN_USERNAME: 'test-owner',
     ADMIN_PASSWORD: 'test-password',
     SESSION_SECRET: 'test-session-secret',
+    IMAGE_RERANK_BASE_URL: '',
+    IMAGE_RERANK_API_KEY: '',
     NODE_ENV: 'test'
   },
   stdio: ['ignore', 'pipe', 'pipe']
@@ -695,6 +711,7 @@ try {
   assert.equal(recognized.response.status, 200)
   assert.equal(recognized.body.data[0].id, created.body.data.id)
   assert.ok(recognized.body.data[0].confidence >= 99)
+  assert.equal(recognized.body.recognition.method, 'local')
 
   const inventoryWorkbook = XLSX.utils.book_new()
   const inventorySheet = XLSX.utils.aoa_to_sheet([
