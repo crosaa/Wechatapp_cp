@@ -202,52 +202,10 @@ function uniqueCandidates(candidates) {
   })
 }
 
-export async function buildVisualEmbeddingIndex(candidates, imageLoader, { force = false, onProgress = null } = {}) {
-  if (!configured()) throw new Error('百炼视觉向量接口未配置')
-  const expected = uniqueCandidates(candidates)
-  const current = loadIndex()
-  const savedOffsets = new Map(current.items.map((item, index) => [candidateKey(item), index * dimensions]))
-  const vectorsByKey = new Map()
-  const pending = []
-
-  for (const candidate of expected) {
-    const key = candidateKey(candidate)
-    const savedOffset = !force ? savedOffsets.get(key) : undefined
-    if (savedOffset !== undefined) {
-      vectorsByKey.set(key, Buffer.from(current.vectorBuffer.subarray(savedOffset, savedOffset + dimensions)))
-    } else {
-      pending.push(candidate)
-    }
-  }
-
-  const reused = expected.length - pending.length
-  let completed = reused
-  onProgress?.({ completed, total: expected.length, reused })
-  for (let cursor = 0; cursor < pending.length; cursor += batchSize) {
-    const batch = pending.slice(cursor, cursor + batchSize)
-    const entries = []
-    for (const candidate of batch) {
-      try {
-        entries.push({ candidate, input: await imageLoader(candidate.url) })
-      } catch (error) {
-        console.warn(`商品图片读取失败：${candidate.url}（${error.message}）`)
-      }
-    }
-    const embedded = await embedBatchWithFallback(entries)
-    for (const result of embedded) {
-      vectorsByKey.set(candidateKey(result.candidate), quantizeEmbedding(result.vector))
-    }
-    completed += batch.length
-    onProgress?.({ completed, total: expected.length, reused })
-  }
-
-  if (pending.length && vectorsByKey.size === reused) {
-    throw new Error('没有生成任何新的视觉向量，已保留原索引')
-  }
-
+function persistIndex(candidates, vectorsByKey) {
   const items = []
   const vectorBuffers = []
-  for (const candidate of expected) {
+  for (const candidate of candidates) {
     const vector = vectorsByKey.get(candidateKey(candidate))
     if (!vector) continue
     items.push({
@@ -271,6 +229,55 @@ export async function buildVisualEmbeddingIndex(candidates, imageLoader, { force
   renameSync(`${indexPath}.tmp`, indexPath)
   cachedIndex = { ...result, vectorBuffer }
   return cachedIndex
+}
+
+export async function buildVisualEmbeddingIndex(candidates, imageLoader, { force = false, onProgress = null } = {}) {
+  if (!configured()) throw new Error('百炼视觉向量接口未配置')
+  const expected = uniqueCandidates(candidates)
+  const current = loadIndex()
+  const savedOffsets = new Map(current.items.map((item, index) => [candidateKey(item), index * dimensions]))
+  const vectorsByKey = new Map()
+  const pending = []
+
+  for (const candidate of expected) {
+    const key = candidateKey(candidate)
+    const savedOffset = !force ? savedOffsets.get(key) : undefined
+    if (savedOffset !== undefined) {
+      vectorsByKey.set(key, Buffer.from(current.vectorBuffer.subarray(savedOffset, savedOffset + dimensions)))
+    } else {
+      pending.push(candidate)
+    }
+  }
+
+  const reused = expected.length - pending.length
+  let completed = reused
+  onProgress?.({ completed, total: expected.length, reused })
+  for (let cursor = 0; cursor < pending.length; cursor += batchSize) {
+    const batch = pending.slice(cursor, cursor + batchSize)
+    const savedCount = vectorsByKey.size
+    const entries = []
+    for (const candidate of batch) {
+      try {
+        entries.push({ candidate, input: await imageLoader(candidate.url) })
+      } catch (error) {
+        console.warn(`商品图片读取失败：${candidate.url}（${error.message}）`)
+      }
+    }
+    const embedded = await embedBatchWithFallback(entries)
+    for (const result of embedded) {
+      vectorsByKey.set(candidateKey(result.candidate), quantizeEmbedding(result.vector))
+    }
+    // Persist every paid batch so an interruption can resume without regenerating it.
+    if (vectorsByKey.size > savedCount) persistIndex(expected, vectorsByKey)
+    completed += batch.length
+    onProgress?.({ completed, total: expected.length, reused })
+  }
+
+  if (pending.length && vectorsByKey.size === reused) {
+    throw new Error('没有生成任何新的视觉向量，已保留原索引')
+  }
+
+  return persistIndex(expected, vectorsByKey)
 }
 
 export function ensureVisualEmbeddingIndex(candidates, imageLoader) {
