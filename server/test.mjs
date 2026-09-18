@@ -7,6 +7,26 @@ import XLSX from 'xlsx'
 import sharp from 'sharp'
 import { buildWarehouseInventoryPlan } from './warehouse-inventory.mjs'
 import { applyImageRerank, parseImageRerankResponse } from './image-reranker.mjs'
+import {
+  normalizeEmbedding,
+  parseDashScopeEmbeddingResponse,
+  quantizeEmbedding,
+  quantizedCosine
+} from './visual-embedding.mjs'
+
+const parsedVisualEmbeddings = parseDashScopeEmbeddingResponse({
+  output: {
+    embeddings: [
+      { index: 1, embedding: [0, 4, 3] },
+      { index: 0, embedding: [3, 4, 0] }
+    ]
+  }
+}, 2, 3)
+assert.deepEqual([...parsedVisualEmbeddings[0]].map(value => Number(value.toFixed(4))), [0.6, 0.8, 0])
+assert.deepEqual([...parsedVisualEmbeddings[1]].map(value => Number(value.toFixed(4))), [0, 0.8, 0.6])
+const normalizedVisualEmbedding = normalizeEmbedding([3, 4, 0], 3)
+assert.ok(quantizedCosine(normalizedVisualEmbedding, quantizeEmbedding(normalizedVisualEmbedding)) > 0.99)
+assert.throws(() => normalizeEmbedding([1, 2], 3), /维度不正确/)
 
 const parsedRerank = parseImageRerankResponse('```json\n{"best":"B","confidence":91,"ranking":["B","A"],"reason":"款式一致"}\n```', ['A', 'B'])
 assert.deepEqual(parsedRerank.ranking, ['B', 'A'])
@@ -125,6 +145,7 @@ const child = spawn(process.execPath, ['server/server.mjs'], {
     SESSION_SECRET: 'test-session-secret',
     IMAGE_RERANK_BASE_URL: '',
     IMAGE_RERANK_API_KEY: '',
+    VISUAL_EMBEDDING_API_KEY: '',
     NODE_ENV: 'test'
   },
   stdio: ['ignore', 'pipe', 'pipe']

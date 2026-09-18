@@ -7,6 +7,8 @@
 商品 API server/server.mjs
         ├── SQLite：商品资料、状态、排序和图片地址
         ├── uploads/：本地上传图片
+        ├── 百炼 Qwen3-VL：商品图片向量召回
+        ├── Gemini：Top-10 候选图片复核
         └── admin/：浏览器商品管理后台
 ```
 
@@ -31,6 +33,7 @@
 - `GET /api/categories`：已上架商品分类
 - `GET /api/products`：已上架商品列表
 - `GET /api/products/:id`：商品详情
+- `POST /api/products/recognize`：客户图片识别；视觉向量召回、Gemini复核并自动降级
 
 管理接口：
 

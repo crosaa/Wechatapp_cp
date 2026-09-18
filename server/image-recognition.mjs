@@ -2,6 +2,11 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
+import {
+  buildVisualEmbeddingIndex,
+  ensureVisualEmbeddingIndex,
+  retrieveVisualEmbeddingProducts
+} from './visual-embedding.mjs'
 
 const serverDir = fileURLToPath(new URL('.', import.meta.url))
 const dataDir = resolve(process.env.DATA_DIR || join(serverDir, 'data'))
@@ -348,8 +353,7 @@ function featureSimilarity(left, right) {
   return { score, color, trademark, style }
 }
 
-export async function recognizeProductImage(dataUrl, products, limit = 12) {
-  const buffer = decodeImageData(dataUrl)
+async function recognizeProductImageLegacy(buffer, products, limit = 12) {
   const queryFeature = await createImageFeature(buffer)
   const index = await ensureImageSearchIndex(products)
   if (!index.items.length) throw new Error('商品图片识别索引为空，请先为商品上传图片')
@@ -388,4 +392,31 @@ export async function recognizeProductImage(dataUrl, products, limit = 12) {
         style: Math.round(item.best.style * 100)
       }
     }))
+}
+
+function visualCandidates(products) {
+  return products.flatMap(candidateEntries)
+}
+
+export function buildVisualImageSearchIndex(products, options = {}) {
+  return buildVisualEmbeddingIndex(visualCandidates(products), imageInput, options)
+}
+
+export function ensureVisualImageSearchIndex(products) {
+  return ensureVisualEmbeddingIndex(visualCandidates(products), imageInput)
+}
+
+export async function recognizeProductImage(dataUrl, products, limit = 12) {
+  const buffer = decodeImageData(dataUrl)
+  try {
+    const visualMatches = await retrieveVisualEmbeddingProducts(buffer, products, Math.max(10, Number(limit) || 12))
+    if (visualMatches?.length) {
+      void ensureVisualImageSearchIndex(products)
+      return visualMatches.slice(0, Math.max(1, Math.min(30, Number(limit) || 12)))
+    }
+  } catch (error) {
+    console.warn(`百炼视觉向量检索已降级为传统检索：${error.message}`)
+  }
+  void ensureVisualImageSearchIndex(products)
+  return recognizeProductImageLegacy(buffer, products, limit)
 }

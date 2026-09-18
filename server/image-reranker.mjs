@@ -158,7 +158,8 @@ function saveCache(key, value) {
 }
 
 function localResult(matches, reason) {
-  return { matches, used: false, method: 'local', reason }
+  const visual = matches.some(match => match.recognitionMethod === 'qwen3-vl-embedding')
+  return { matches, used: false, method: visual ? 'visual' : 'local', reason }
 }
 
 export async function rerankProductImageMatches(dataUrl, matches = []) {
@@ -242,7 +243,9 @@ export async function rerankProductImageMatches(dataUrl, matches = []) {
     const value = {
       matches: applyImageRerank(matches, candidates, rerank),
       used: rerank.ranking.length > 0,
-      method: rerank.ranking.length > 0 ? 'hybrid' : 'local',
+      method: rerank.ranking.length > 0
+        ? (matches.some(match => match.recognitionMethod === 'qwen3-vl-embedding') ? 'visual-rag' : 'hybrid')
+        : 'local',
       model,
       elapsedMs: Date.now() - startedAt,
       candidateCount: candidates.length,

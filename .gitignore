@@ -24,6 +24,8 @@ server/data/**/*.db
 server/data/**/*.db-*
 server/data/image-search-index.json
 server/data/image-search-index.json.tmp
+server/data/visual-embedding-index.json
+server/data/visual-embedding-index.json.tmp
 
 # User-uploaded media is runtime data, not source code
 server/uploads/*

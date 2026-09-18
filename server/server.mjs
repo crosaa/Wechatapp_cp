@@ -8,8 +8,9 @@ import { extname, join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
 import XLSX from 'xlsx'
-import { ensureImageSearchIndex, recognizeProductImage } from './image-recognition.mjs'
+import { ensureImageSearchIndex, ensureVisualImageSearchIndex, recognizeProductImage } from './image-recognition.mjs'
 import { imageRerankerStatus, rerankProductImageMatches } from './image-reranker.mjs'
+import { visualEmbeddingStatus } from './visual-embedding.mjs'
 import {
   createAdminUser,
   createCategory,
@@ -85,6 +86,13 @@ function markPublicDataChanged() {
   versionedDataCache.clear()
   versionedDataCacheVersion = publicDataVersion()
   return publicDataVersion()
+}
+
+function scheduleVisualImageIndexRefresh() {
+  setImmediate(() => {
+    ensureVisualImageSearchIndex(listProducts({ status: 'published' }))
+      .catch(error => console.warn(`视觉向量索引后台更新失败：${error.message}`))
+  })
 }
 
 function cachedVersionedData(key, loader) {
@@ -1488,6 +1496,7 @@ async function handleApi(req, res, url) {
   if (url.pathname === '/api/admin/products' && req.method === 'POST') {
     const product = createProduct(await readJson(req))
     markPublicDataChanged()
+    scheduleVisualImageIndexRefresh()
     json(res, 201, { data: product })
     return true
   }
@@ -1500,6 +1509,7 @@ async function handleApi(req, res, url) {
     else {
       try { cleanupRemovedUploadReferences(previous) } catch (error) { console.warn(`Product image cleanup failed: ${error.message}`) }
       markPublicDataChanged()
+      scheduleVisualImageIndexRefresh()
       json(res, 200, { data: product })
     }
     return true
@@ -1511,6 +1521,7 @@ async function handleApi(req, res, url) {
     else {
       try { cleanupRemovedUploadReferences(previous) } catch (error) { console.warn(`Product image cleanup failed: ${error.message}`) }
       markPublicDataChanged()
+      scheduleVisualImageIndexRefresh()
       json(res, 200, { ok: true })
     }
     return true
@@ -1569,6 +1580,10 @@ server.listen(port, '127.0.0.1', () => {
   console.log(`商品管理后台：http://127.0.0.1:${port}/admin/`)
   console.log(`商品摘要缓存：${summaryCount} 款`)
   const reranker = imageRerankerStatus()
+  const visualEmbedding = visualEmbeddingStatus()
+  console.log(visualEmbedding.configured
+    ? `视觉向量检索：${visualEmbedding.model}，${visualEmbedding.dimensions}维，已索引 ${visualEmbedding.indexedImages} 张商品图片`
+    : '视觉向量检索：未配置，使用传统本地检索')
   console.log(reranker.configured ? `商品图片智能复核：${reranker.model}，候选 ${reranker.candidateLimit} 款` : '商品图片智能复核：未配置，使用本地识别')
   if (!process.env.ADMIN_PASSWORD) console.log('本地演示账号：admin / admin123（正式部署前必须修改）')
 })
@@ -1576,5 +1591,12 @@ server.listen(port, '127.0.0.1', () => {
 ensureImageSearchIndex(listProducts({ status: 'published' }))
   .then(index => console.log(`拍图识别索引：${index.items.length} 张商品图片`))
   .catch(error => console.warn(`拍图识别索引生成失败：${error.message}`))
+
+ensureVisualImageSearchIndex(listProducts({ status: 'published' }))
+  .then(index => {
+    const status = visualEmbeddingStatus()
+    if (status.configured) console.log(`视觉向量索引：${index.items.length} 张商品图片`)
+  })
+  .catch(error => console.warn(`视觉向量索引生成失败：${error.message}`))
 
 export { server }

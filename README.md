@@ -68,7 +68,7 @@
 - 商品主图、详情长图和带分类的实拍图分别管理
 - SQLite 持久化数据库
 - 小程序公开商品接口
-- 拍图识别先使用本地图片索引召回候选，再由可选的 Gemini 兼容接口进行多图复核；接口超时、繁忙或额度不足时自动降级为本地结果
+- 拍图识别先使用百炼 `qwen3-vl-embedding` 从自有商品图库召回候选，再由 Gemini 兼容接口进行多图复核；任一外部接口不可用时自动降级，传统本地图片索引作为最终兜底
 - 自动化接口测试
 - 每日生成 SQLite 一致性备份并清理超过 5 天的旧备份；同时清理超过 24 小时仍未被使用的上传图片
 
@@ -80,7 +80,7 @@
 
 正式环境当前使用 `https://cpminiapp.xinghaiapp.top`：SQLite 数据库与全部商品图片均保存在自有服务器，微信公众平台请求域名也使用该域名。上线维护时需要继续执行强管理密码、固定会话密钥和定期备份。
 
-智能图片复核只在后端启用，密钥不能写入小程序或提交到 Git。配置项见 `deploy/cpminiapp.env.example`。推荐使用 `gemini-3.7-flash`、10 个候选、18 秒超时；未设置 `IMAGE_RERANK_BASE_URL` 或 `IMAGE_RERANK_API_KEY` 时自动使用原有本地识别。
+图片向量召回与智能复核都只在后端启用，密钥不能写入小程序或提交到 Git。配置项见 `deploy/cpminiapp.env.example`。正式链路使用百炼 `qwen3-vl-embedding` 512维向量召回，再使用 `gemini-3.7-flash` 复核10个候选；任何一层超时、繁忙或额度不足都会自动降级。
 
 详细设计见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
@@ -93,6 +93,16 @@ pnpm test
 ```
 
 测试覆盖管理登录、商品新增、图片上传、编辑、上架、公开查询和删除。
+
+首次启用视觉向量识别，或需要强制重建全部商品图片向量时运行：
+
+```bash
+npm run build:visual-index
+# 强制忽略已有向量重新计算
+node scripts/build-visual-embedding-index.mjs --force
+```
+
+平时新增、换图、删除或上下架商品后，服务会在后台增量更新向量索引，不重复计算未变化的商品图片。
 
 生产服务器启用 `deploy/cpminiapp-maintenance.timer` 后，每天会执行：
 
