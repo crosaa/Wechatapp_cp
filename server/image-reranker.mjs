@@ -10,7 +10,7 @@ const publicImagesDir = join(serverDir, 'public', 'images')
 const baseUrl = String(process.env.IMAGE_RERANK_BASE_URL || '').trim().replace(/\/+$/u, '')
 const apiKey = String(process.env.IMAGE_RERANK_API_KEY || '').trim()
 const model = String(process.env.IMAGE_RERANK_MODEL || 'gemini-3.7-flash').trim()
-const candidateLimit = Math.max(2, Math.min(10, Number(process.env.IMAGE_RERANK_CANDIDATES) || 8))
+const candidateLimit = Math.max(2, Math.min(10, Number(process.env.IMAGE_RERANK_CANDIDATES) || 10))
 const timeoutMs = Math.max(5_000, Math.min(30_000, Number(process.env.IMAGE_RERANK_TIMEOUT_MS) || 18_000))
 const maxConcurrency = Math.max(1, Math.min(8, Number(process.env.IMAGE_RERANK_MAX_CONCURRENCY) || 4))
 const cacheTtlMs = 5 * 60 * 1000
@@ -108,7 +108,7 @@ export function parseImageRerankResponse(content, allowedLabels = []) {
 }
 
 export function applyImageRerank(matches, candidates, rerank) {
-  if (!rerank || rerank.uncertain || !rerank.ranking?.length) return matches
+  if (!rerank || !rerank.ranking?.length) return matches
   const matchByLabel = new Map(candidates.map(candidate => [candidate.label, candidate.match]))
   const ordered = []
   const seenIds = new Set()
@@ -205,13 +205,13 @@ export async function rerankProductImageMatches(dataUrl, matches = []) {
       const match = candidate.match
       content.push({
         type: 'text',
-        text: `候选 ${candidate.label}；款号 ${promptText(match.code, 50)}；名称 ${promptText(match.name, 80)}；本地相似度 ${Number(match.score || 0).toFixed(4)}。`
+        text: `候选 ${candidate.label}；款号 ${promptText(match.code, 50)}；名称 ${promptText(match.name, 80)}；分类 ${promptText(match.category, 60)}；本地相似度 ${Number(match.score || 0).toFixed(4)}。`
       })
       content.push({ type: 'image_url', image_url: { url: candidate.image } })
     }
     content.push({
       type: 'text',
-      text: `请把 ${candidates.map(candidate => candidate.label).join('、')} 从最像到最不像排序。若没有足够相似的候选，best 必须为 none。只返回 JSON：{"best":"候选字母或none","confidence":0到100的整数,"ranking":["候选字母"],"matched_color":"查询图颜色","reason":"一句简短依据","uncertain":false}`
+      text: `请把 ${candidates.map(candidate => candidate.label).join('、')} 从最像到最不像排序。即使没有完全相同的商品，也必须从候选中选择最接近的一项作为 best，同时用 uncertain 标记是否无法确认是同款。只返回 JSON：{"best":"候选字母","confidence":0到100的整数,"ranking":["全部候选字母"],"matched_color":"查询图颜色","reason":"一句简短依据","uncertain":false}`
     })
 
     const controller = new AbortController()
@@ -241,11 +241,12 @@ export async function rerankProductImageMatches(dataUrl, matches = []) {
     const rerank = parseImageRerankResponse(payload?.choices?.[0]?.message?.content, candidates.map(candidate => candidate.label))
     const value = {
       matches: applyImageRerank(matches, candidates, rerank),
-      used: !rerank.uncertain,
-      method: rerank.uncertain ? 'local' : 'hybrid',
+      used: rerank.ranking.length > 0,
+      method: rerank.ranking.length > 0 ? 'hybrid' : 'local',
       model,
       elapsedMs: Date.now() - startedAt,
-      candidateCount: candidates.length
+      candidateCount: candidates.length,
+      uncertain: rerank.uncertain
     }
     consecutiveFailures = 0
     circuitOpenUntil = 0

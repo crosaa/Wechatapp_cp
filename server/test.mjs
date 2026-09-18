@@ -19,6 +19,13 @@ const rerankedMatches = applyImageRerank(
 assert.deepEqual(rerankedMatches.map(match => match.id), [2, 1, 3])
 assert.equal(rerankedMatches[0].aiConfidence, 91)
 assert.equal(rerankedMatches[0].recognitionMethod, 'gemini-reranked')
+const uncertainRerank = parseImageRerankResponse('{"best":"none","uncertain":true,"confidence":42,"ranking":["A","B"]}', ['A', 'B'])
+assert.equal(uncertainRerank.uncertain, true)
+assert.deepEqual(applyImageRerank(
+  [{ id: 2 }, { id: 1 }],
+  [{ label: 'A', match: { id: 1 } }, { label: 'B', match: { id: 2 } }],
+  uncertainRerank
+).map(match => match.id), [1, 2])
 assert.throws(() => parseImageRerankResponse('not-json', ['A']), /未返回 JSON/)
 
 const colorCodePlan = buildWarehouseInventoryPlan([

@@ -1195,7 +1195,8 @@ async function handleApi(req, res, url) {
         model: recognition.used ? recognition.model : '',
         candidateCount: recognition.candidateCount || 0,
         elapsedMs: recognition.elapsedMs || 0,
-        cached: Boolean(recognition.cached)
+        cached: Boolean(recognition.cached),
+        uncertain: Boolean(recognition.uncertain)
       }
     }, { 'access-control-allow-origin': '*' })
     return true

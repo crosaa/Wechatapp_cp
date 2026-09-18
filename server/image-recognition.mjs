@@ -375,6 +375,8 @@ export async function recognizeProductImage(dataUrl, products, limit = 12) {
       id: item.product.id,
       name: item.product.name,
       code: item.product.code,
+      category: item.product.category,
+      categories: item.product.categories || [],
       image: item.best.matchedImage || item.product.images?.[0] || '',
       score: Number(item.score.toFixed(4)),
       confidence: Math.round(item.best.score * 100),

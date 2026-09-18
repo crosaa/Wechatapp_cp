@@ -80,7 +80,7 @@
 
 正式环境当前使用 `https://cpminiapp.xinghaiapp.top`：SQLite 数据库与全部商品图片均保存在自有服务器，微信公众平台请求域名也使用该域名。上线维护时需要继续执行强管理密码、固定会话密钥和定期备份。
 
-智能图片复核只在后端启用，密钥不能写入小程序或提交到 Git。配置项见 `deploy/cpminiapp.env.example`。推荐使用 `gemini-3.7-flash`、8 个候选、18 秒超时；未设置 `IMAGE_RERANK_BASE_URL` 或 `IMAGE_RERANK_API_KEY` 时自动使用原有本地识别。
+智能图片复核只在后端启用，密钥不能写入小程序或提交到 Git。配置项见 `deploy/cpminiapp.env.example`。推荐使用 `gemini-3.7-flash`、10 个候选、18 秒超时；未设置 `IMAGE_RERANK_BASE_URL` 或 `IMAGE_RERANK_API_KEY` 时自动使用原有本地识别。
 
 详细设计见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
