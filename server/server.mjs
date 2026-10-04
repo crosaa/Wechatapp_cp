@@ -210,6 +210,29 @@ function cleanupRemovedUploadReferences(previousValue) {
   return removed
 }
 
+// The public (mini program) APIs leave out pictures whose files are missing on the
+// server, so customers never request them; admins still see them under 待处理问题.
+function uploadMissing(value) {
+  const uploadPath = uploadPathFromValue(value)
+  return Boolean(uploadPath) && !localUploadPath(uploadPath)
+}
+
+function withoutMissingImages(product) {
+  if (!product) return product
+  const keep = value => !uploadMissing(value)
+  const colorGalleries = Object.fromEntries(Object.entries(product.colorGalleries || {})
+    .map(([color, gallery]) => [color, (gallery || []).filter(keep)]))
+  return {
+    ...product,
+    images: (product.images || []).filter(keep),
+    posterImage: keep(product.posterImage) ? product.posterImage : '',
+    colorGalleries,
+    colorImages: Object.fromEntries(Object.entries(colorGalleries).filter(([, gallery]) => gallery.length).map(([color, gallery]) => [color, gallery[0]])),
+    detailImages: (product.detailImages || []).filter(keep),
+    realImages: (product.realImages || []).filter(item => keep(item?.url))
+  }
+}
+
 // Fingerprint of everything the product editor saves. The editor sends back the
 // revision it was opened with, so a save from an outdated page (someone else saved,
 // the stock was imported, the position or status changed meanwhile) is rejected
@@ -429,7 +452,7 @@ function summarizedProducts(params = {}) {
   const category = String(params.category || '').trim()
   const key = `${q}\u0000${category}`
   if (publicProductSummaryCache.has(key)) return publicProductSummaryCache.get(key)
-  const data = listProducts({ status: 'published', q, category }).map(summarizeProduct)
+  const data = listProducts({ status: 'published', q, category }).map(product => summarizeProduct(withoutMissingImages(product)))
   publicProductSummaryCache.set(key, data)
   if (publicProductSummaryCache.size > 80) {
     publicProductSummaryCache.delete(publicProductSummaryCache.keys().next().value)
@@ -440,28 +463,33 @@ function summarizedProducts(params = {}) {
 function publicCategoriesData() {
   return cachedVersionedData('public:categories', () => listCategories().map(category => ({
     ...category,
-    image: String(category.image || '').startsWith('/uploads/')
-      ? `/api/product-thumbnail?src=${encodeURIComponent(category.image)}&size=200`
-      : category.image
+    image: uploadMissing(category.image)
+      ? ''
+      : String(category.image || '').startsWith('/uploads/')
+        ? `/api/product-thumbnail?src=${encodeURIComponent(category.image)}&size=200`
+        : category.image
   })))
 }
 
 function publicStoreSettingsData() {
   return cachedVersionedData('public:store-settings', () => {
     const settings = getStoreSettings()
+    const available = image => (uploadMissing(image) ? '' : image)
     const homeHeroImages = Array.isArray(settings.homeHeroImages)
-      ? settings.homeHeroImages.map(image => String(image || '').startsWith('/uploads/')
+      ? settings.homeHeroImages.map(available).filter(Boolean).map(image => String(image || '').startsWith('/uploads/')
         ? `/api/product-thumbnail?src=${encodeURIComponent(image)}&size=1200`
         : image)
       : []
+    const storeIcon = available(settings.storeIcon)
+    const homeHeroImage = available(settings.homeHeroImage)
     return {
       ...settings,
-      storeIcon: String(settings.storeIcon || '').startsWith('/uploads/')
-        ? `/api/product-thumbnail?src=${encodeURIComponent(settings.storeIcon)}&size=200`
-        : settings.storeIcon,
-      homeHeroImage: String(settings.homeHeroImage || '').startsWith('/uploads/')
-        ? `/api/product-thumbnail?src=${encodeURIComponent(settings.homeHeroImage)}&size=1200`
-        : settings.homeHeroImage,
+      storeIcon: String(storeIcon || '').startsWith('/uploads/')
+        ? `/api/product-thumbnail?src=${encodeURIComponent(storeIcon)}&size=200`
+        : storeIcon,
+      homeHeroImage: String(homeHeroImage || '').startsWith('/uploads/')
+        ? `/api/product-thumbnail?src=${encodeURIComponent(homeHeroImage)}&size=1200`
+        : homeHeroImage,
       homeHeroImages
     }
   })
@@ -1230,7 +1258,7 @@ async function handleApi(req, res, url) {
       ? summarizedProducts(params)
       : cachedVersionedData(
         `public:products:${String(params.q || '')}\u0000${String(params.category || '')}`,
-        () => listProducts({ status: 'published', ...params })
+        () => listProducts({ status: 'published', ...params }).map(withoutMissingImages)
       )
     json(res, 200, { data }, publicJsonHeaders)
     return true
@@ -1271,7 +1299,7 @@ async function handleApi(req, res, url) {
   if (publicProductMatch && req.method === 'GET') {
     const product = cachedVersionedData(
       `public:product:${publicProductMatch[1]}`,
-      () => getProduct(publicProductMatch[1])
+      () => withoutMissingImages(getProduct(publicProductMatch[1]))
     )
     if (!product || product.status !== 'published') json(res, 404, { error: '商品不存在' }, { 'access-control-allow-origin': '*' })
     else json(res, 200, { data: product }, publicJsonHeaders)
