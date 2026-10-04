@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>普润制衣团购仓 · 商品管理</title>
   <link rel="icon" type="image/png" sizes="64x64" href="/images/purun-favicon.png?v=20260724-logo1" />
-  <link rel="stylesheet" href="/admin/styles.css?v=20260730-hidden-operation-scrollbar1" />
+  <link rel="stylesheet" href="/admin/styles.css?v=20261005-save-conflict1" />
 </head>
 <body>
   <section class="login-screen" id="loginScreen">
@@ -35,6 +35,7 @@
       <div class="sidebar-brand"><span><img src="/images/purun-gold-drop-logo.png" alt="普润制衣团购仓图标" data-admin-store-icon /></span><div><strong data-admin-store-name>普润制衣团购仓</strong><small>商品运营中心</small></div></div>
       <nav>
         <a class="nav-item active" href="#products"><span>▦</span>商品管理</a>
+        <a class="nav-item" href="#issues"><span>!</span>待处理问题<b class="nav-badge is-hidden" id="issueNavBadge">0</b></a>
         <a class="nav-item" href="#inventory-mappings"><span>⇄</span>库存对应</a>
         <a class="nav-item" href="#homepage"><span>⌂</span>首页展示</a>
         <a class="nav-item" href="#categories"><span>▤</span>分类管理</a>
@@ -59,6 +60,11 @@
         <small>后台只要有操作并保存成功就会同步更新；已打开小程序的顾客继续操作、切换页面或返回页面即可看到最新内容。</small>
         <label class="image-upload-policy"><span>图片上传处理</span><select id="imageUploadModeSelect"><option value="auto">自动优化（推荐）</option><option value="original">保留原图</option></select><em id="imageUploadModeHint">按上传位置自动调整像素和体积</em></label>
       </aside>
+      <a class="issue-alert is-hidden" id="issueAlert" href="#issues">
+        <strong>⚠ 有 <b id="issueAlertCount">0</b> 个待处理问题</strong>
+        <span>部分图片文件在服务器上已丢失，小程序会暂时跳过这些图片，请尽快重新上传。</span>
+        <em>查看并修复 →</em>
+      </a>
       <header class="topbar admin-page is-active" data-admin-page="products">
         <div>
           <p class="eyebrow">PRODUCT OPERATIONS</p>
@@ -79,6 +85,20 @@
         <article class="stat-card"><span class="stat-label">草稿</span><strong id="draftCount">0</strong><small><i class="dot amber"></i> 尚未对外展示</small></article>
         <article class="stat-card"><span class="stat-label">颜色尺码预警</span><strong id="lowStockCount">0</strong><small><i class="dot red"></i> 有颜色尺码库存不超过 5</small></article>
         <article class="stat-card"><span class="stat-label">商品分类</span><strong id="categoryCount">0</strong><small>正在使用的分类</small></article>
+      </section>
+
+      <section class="issues-panel admin-page" id="issues" data-admin-page="issues">
+        <div class="issues-head">
+          <div>
+            <p class="eyebrow">PENDING ISSUES</p>
+            <h2>待处理问题</h2>
+            <p>系统会自动检查商品、分类和首页设置里用到的图片。下列图片文件在服务器上已经不存在，小程序会暂时跳过它们。请点击“去修复”，在编辑框里删除标红的图片并重新上传，保存后该问题会自动从列表中消失。</p>
+          </div>
+          <button type="button" class="secondary-button" id="issuesRefreshButton">重新检查</button>
+        </div>
+        <div class="issues-list" id="issuesList"></div>
+        <div class="empty-state is-hidden" id="issuesEmpty"><span>✓</span><h3>暂无待处理问题</h3><p>所有图片都能正常显示。</p></div>
+        <p class="issues-meta" id="issuesMeta"></p>
       </section>
 
       <section class="inventory-mapping-panel admin-page" id="inventory-mappings" data-admin-page="inventory-mappings">
@@ -493,6 +513,6 @@
     <p id="operationProgressDetail">正在准备文件…</p>
   </section>
   <div class="toast" id="toast" role="status"></div>
-  <script type="module" src="/admin/app.js?v=20260729-smart-image-upload1"></script>
+  <script type="module" src="/admin/app.js?v=20261005-save-conflict1"></script>
 </body>
 </html>

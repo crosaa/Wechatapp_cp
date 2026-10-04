@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -526,6 +526,68 @@ try {
   const cleanupProductRemoved = await request(`/api/admin/products/${cleanupProduct.body.data.id}`, { method: 'DELETE' }, cookie)
   assert.equal(cleanupProductRemoved.response.status, 200)
   assert.equal((await fetch(`${base}${cleanupUpload.body.url}`)).status, 404)
+
+  // The editor reloads one product before editing; an image file missing from disk is
+  // listed under 待处理问题 until the product stops referencing it.
+  const issueUpload = await request('/api/admin/uploads', {
+    method: 'POST',
+    body: JSON.stringify({
+      fileName: 'issue.png',
+      dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+    })
+  }, cookie)
+  assert.equal(issueUpload.response.status, 201)
+  const issueProduct = await request('/api/admin/products', {
+    method: 'POST',
+    body: JSON.stringify({ code: 'ISSUE-001', name: '图片丢失测试商品', category: '圆领T恤', price: 1, status: 'draft', colors: ['黑色'], sizes: ['M'], images: [issueUpload.body.url], detailImages: [issueUpload.body.url] })
+  }, cookie)
+  assert.equal(issueProduct.response.status, 201)
+  const issueProductId = issueProduct.body.data.id
+  const freshProduct = await request(`/api/admin/products/${issueProductId}`, {}, cookie)
+  assert.equal(freshProduct.response.status, 200)
+  assert.equal(freshProduct.body.data.code, 'ISSUE-001')
+  assert.deepEqual(freshProduct.body.data.detailImages, [issueUpload.body.url])
+  assert.equal((await request('/api/admin/products/99999999', {}, cookie)).response.status, 404)
+  assert.equal((await request(`/api/admin/products/${issueProductId}`)).response.status, 401)
+  assert.equal((await request('/api/admin/issues')).response.status, 401)
+  const issuesBefore = await request('/api/admin/issues', {}, cookie)
+  assert.equal(issuesBefore.response.status, 200)
+  assert.ok(!issuesBefore.body.data.issues.some(issue => issue.id === issueProductId))
+  unlinkSync(join(workspace, 'uploads', issueUpload.body.url.slice('/uploads/'.length)))
+  await request(`/api/admin/products/${issueProductId}`, { method: 'PUT', body: JSON.stringify({ name: '图片丢失测试商品（已编辑）' }) }, cookie)
+  const issuesAfterLoss = await request('/api/admin/issues', {}, cookie)
+  const lostImageIssue = issuesAfterLoss.body.data.issues.find(issue => issue.id === issueProductId)
+  assert.equal(lostImageIssue?.target, 'product')
+  assert.deepEqual(lostImageIssue.problems, [{ label: '商品主图', count: 1 }, { label: '详情图', count: 1 }])
+  await request(`/api/admin/products/${issueProductId}`, { method: 'PUT', body: JSON.stringify({ images: [], detailImages: [] }) }, cookie)
+  const issuesAfterFix = await request('/api/admin/issues', {}, cookie)
+  assert.ok(!issuesAfterFix.body.data.issues.some(issue => issue.id === issueProductId))
+  assert.equal((await request(`/api/admin/products/${issueProductId}`, { method: 'DELETE' }, cookie)).response.status, 200)
+
+  // Two editors open on one product: the first save wins and the stale one is rejected
+  // instead of overwriting it; partial updates without a revision still go through.
+  const conflictProduct = await request('/api/admin/products', {
+    method: 'POST',
+    body: JSON.stringify({ code: 'CONFLICT-001', name: '保存冲突测试商品', category: '圆领T恤', price: 10, status: 'draft', colors: ['黑色'], sizes: ['M'] })
+  }, cookie)
+  assert.equal(conflictProduct.response.status, 201)
+  const conflictId = conflictProduct.body.data.id
+  const editorA = await request(`/api/admin/products/${conflictId}`, {}, cookie)
+  const editorB = await request(`/api/admin/products/${conflictId}`, {}, cookie)
+  assert.match(editorA.body.data.revision, /^[0-9a-f]{16}$/)
+  assert.equal(editorA.body.data.revision, editorB.body.data.revision)
+  const savedByA = await request(`/api/admin/products/${conflictId}`, { method: 'PUT', body: JSON.stringify({ price: 12, expectedRevision: editorA.body.data.revision }) }, cookie)
+  assert.equal(savedByA.response.status, 200)
+  const staleSaveByB = await request(`/api/admin/products/${conflictId}`, { method: 'PUT', body: JSON.stringify({ name: '旧页面保存', price: 10, expectedRevision: editorB.body.data.revision }) }, cookie)
+  assert.equal(staleSaveByB.response.status, 409)
+  const afterConflict = await request(`/api/admin/products/${conflictId}`, {}, cookie)
+  assert.equal(afterConflict.body.data.price, 12)
+  assert.equal(afterConflict.body.data.name, '保存冲突测试商品')
+  assert.notEqual(afterConflict.body.data.revision, editorB.body.data.revision)
+  const resavedFresh = await request(`/api/admin/products/${conflictId}`, { method: 'PUT', body: JSON.stringify({ name: '重新打开后保存', expectedRevision: afterConflict.body.data.revision }) }, cookie)
+  assert.equal(resavedFresh.response.status, 200)
+  assert.equal((await request(`/api/admin/products/${conflictId}`, { method: 'PUT', body: JSON.stringify({ status: 'published' }) }, cookie)).response.status, 200)
+  assert.equal((await request(`/api/admin/products/${conflictId}`, { method: 'DELETE' }, cookie)).response.status, 200)
 
   const categoryList = await request('/api/admin/categories', {}, cookie)
   assert.equal(categoryList.response.status, 200)

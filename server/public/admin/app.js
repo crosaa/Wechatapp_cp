@@ -3,6 +3,9 @@ const $ = selector => document.querySelector(selector)
 const state = {
   currentUser: null,
   adminUsers: [],
+  issues: [],
+  issuesCheckedAt: '',
+  editingRevision: '',
   products: [],
   categories: [],
   categoryImageId: null,
@@ -204,7 +207,8 @@ function hydrateImageMetadata(container) {
       readImageFileSize(label.dataset.imageUrl)
     ])
     if (!label.isConnected) return
-    label.textContent = [dimensions, fileSize].filter(Boolean).join(' · ') || '图片信息暂不可用'
+    const missing = image.complete && !image.naturalWidth
+    label.textContent = missing ? '图片文件已丢失，请删除后重新上传' : ([dimensions, fileSize].filter(Boolean).join(' · ') || '图片信息暂不可用')
   })
 }
 
@@ -717,9 +721,10 @@ function renderHomepageOverview(products) {
     : '<div class="homepage-content-empty">暂无可展示分类</div>'
 }
 
-const adminPageNames = new Set(['products', 'inventory-mappings', 'homepage', 'categories', 'media', 'settings', 'accounts'])
+const adminPageNames = new Set(['products', 'issues', 'inventory-mappings', 'homepage', 'categories', 'media', 'settings', 'accounts'])
 const adminPageLabels = {
   products: '商品管理',
+  issues: '待处理问题',
   'inventory-mappings': '库存对应',
   homepage: '首页展示',
   categories: '分类管理',
@@ -729,6 +734,7 @@ const adminPageLabels = {
 }
 const adminPageIcons = {
   products: '▦',
+  issues: '!',
   'inventory-mappings': '⇄',
   homepage: '⌂',
   categories: '▤',
@@ -816,6 +822,11 @@ function showAdminPage(name = adminPageFromHash(), { scrollTop = false, renderPa
   })
   renderOperationPageTabs(pageName)
   document.title = `${state.settings?.storeName || '普润制衣团购仓'}，${adminPageLabels[pageName] || '商品管理'}`
+  renderIssueIndicators()
+  if (pageName === 'issues') {
+    renderIssues()
+    loadIssues()
+  }
   if (pageName === 'inventory-mappings' && !state.inventoryMappingsLoaded) loadInventoryMappings()
   const shouldRenderPage = renderPage || !renderedAdminPages.has(pageName)
   if (shouldRenderPage && pageName === 'products') renderProductTable()
@@ -873,9 +884,75 @@ async function loadProducts() {
     render()
     renderSettingsForm()
     showAdminPage(adminPageFromHash(), { scrollTop: false, renderPage: false })
+    loadIssues()
   } catch (error) {
     if (error.status === 401) showLogin()
     else toast(error.message)
+  }
+}
+
+// Data problems every admin should see and fix (currently: image files that are
+// missing on the server). The server re-checks whenever data changes, so an entry
+// disappears by itself once the image has been re-uploaded and saved.
+async function loadIssues({ announce = false } = {}) {
+  try {
+    const { data } = await api('/api/admin/issues')
+    state.issues = data.issues || []
+    state.issuesCheckedAt = data.checkedAt || ''
+    if (announce) toast(state.issues.length ? `发现 ${state.issues.length} 个待处理问题` : '检查完成，暂无待处理问题')
+  } catch (error) {
+    if (announce && error.status !== 401) toast(error.message)
+    return
+  }
+  renderIssueIndicators()
+  if (activeAdminPage === 'issues') renderIssues()
+}
+
+function renderIssueIndicators() {
+  const count = state.issues.length
+  $('#issueNavBadge').textContent = count
+  $('#issueNavBadge').classList.toggle('is-hidden', !count)
+  $('#issueAlertCount').textContent = count
+  $('#issueAlert').classList.toggle('is-hidden', !count || activeAdminPage === 'issues')
+}
+
+function renderIssues() {
+  const targets = {
+    product: issue => ({ kind: issue.status === 'published' ? '已上架商品' : '草稿商品', title: `${issue.code ? `${issue.code} · ` : ''}${issue.name}` }),
+    category: issue => ({ kind: '分类', title: issue.name, page: 'categories' }),
+    settings: issue => ({ kind: '店铺设置', title: issue.name, page: 'settings' })
+  }
+  $('#issuesList').innerHTML = state.issues.map(issue => {
+    const { kind, title, page } = (targets[issue.target] || targets.settings)(issue)
+    const detail = issue.problems.map(problem => `${problem.label} ${problem.count} 张`).join('、')
+    const action = issue.target === 'product'
+      ? `<button type="button" class="primary-button" data-issue-product="${Number(issue.id)}">去修复</button>`
+      : `<a class="secondary-button" href="#${page}">去修复</a>`
+    return `<article class="issue-item">
+      <div><span class="issue-kind">${kind}</span><h3>${escapeHtml(title)}</h3><p>图片文件已丢失：${escapeHtml(detail)}</p></div>
+      ${action}
+    </article>`
+  }).join('')
+  $('#issuesEmpty').classList.toggle('is-hidden', state.issues.length > 0)
+  $('#issuesMeta').textContent = state.issuesCheckedAt ? `最近检查：${new Date(state.issuesCheckedAt).toLocaleString('zh-CN')}` : ''
+}
+
+// Always edit the latest saved version: the list on this page may be outdated if
+// another admin, or an inventory import, changed the product after it was loaded.
+let productEditorLoading = false
+async function openProductEditor(id) {
+  if (productEditorLoading) return
+  productEditorLoading = true
+  try {
+    const { data } = await api(`/api/admin/products/${Number(id)}`)
+    const index = state.products.findIndex(item => item.id === data.id)
+    if (index >= 0) state.products[index] = data
+    openDrawer(data)
+  } catch (error) {
+    if (error.status === 401) showLogin()
+    else toast(error.status === 404 ? '商品不存在或已被删除，请刷新页面' : `读取商品最新资料失败：${error.message}`)
+  } finally {
+    productEditorLoading = false
   }
 }
 
@@ -1234,6 +1311,7 @@ function renderMediaProducts() {
 
 function openDrawer(product = null) {
   state.editingId = product?.id || null
+  state.editingRevision = product?.revision || ''
   state.images = [...(product?.images || [])]
   state.posterImage = product?.posterImage || ''
   state.colorGalleries = Object.fromEntries((product?.colors || []).map(color => {
@@ -2096,9 +2174,25 @@ $('#mediaPageSelect').addEventListener('change', event => {
 $('#mediaProductGrid').addEventListener('click', event => {
   const button = event.target.closest('[data-media-edit]')
   if (!button) return
-  const product = state.products.find(item => item.id === Number(button.dataset.mediaEdit))
-  if (product) openDrawer(product)
+  openProductEditor(button.dataset.mediaEdit)
 })
+
+$('#issuesList').addEventListener('click', event => {
+  const button = event.target.closest('[data-issue-product]')
+  if (button) openProductEditor(button.dataset.issueProduct)
+})
+$('#issuesRefreshButton').addEventListener('click', () => loadIssues({ announce: true }))
+
+// Pictures whose files are missing on the server are outlined in red in the editor,
+// so it is clear which ones to delete and upload again.
+$('#editorDrawer').addEventListener('error', event => {
+  if (event.target.tagName !== 'IMG') return
+  const tile = event.target.closest('.image-item, .poster-image-item, .color-gallery-image, .real-image-item')
+  if (!tile) return
+  tile.classList.add('is-missing')
+  const label = tile.querySelector('[data-image-metadata]')
+  if (label) label.textContent = '图片文件已丢失，请删除后重新上传'
+}, true)
 
 $('#inventoryExcelInput').addEventListener('change', async event => {
   const file = event.target.files[0]
@@ -2245,7 +2339,7 @@ $('#productRows').addEventListener('click', async event => {
   if (!button) return
   const product = state.products.find(item => item.id === Number(button.dataset.id))
   if (!product) return
-  if (button.dataset.action === 'edit') openDrawer(product)
+  if (button.dataset.action === 'edit') openProductEditor(product.id)
   if (button.dataset.action === 'toggle') {
     try {
       await api(`/api/admin/products/${product.id}`, { method: 'PUT', body: JSON.stringify({ status: product.status === 'published' ? 'draft' : 'published' }) })
@@ -2767,11 +2861,19 @@ $('#productForm').addEventListener('submit', async event => {
   $('#formMessage').textContent = ''
   try {
     const path = state.editingId ? `/api/admin/products/${state.editingId}` : '/api/admin/products'
-    await api(path, { method: state.editingId ? 'PUT' : 'POST', body: JSON.stringify(formPayload(event.currentTarget)) })
+    const payload = formPayload(event.currentTarget)
+    // Lets the server reject the save if the product changed after this editor opened.
+    if (state.editingId && state.editingRevision) payload.expectedRevision = state.editingRevision
+    await api(path, { method: state.editingId ? 'PUT' : 'POST', body: JSON.stringify(payload) })
     toast(state.editingId ? '商品信息已更新' : '商品已创建')
     closeDrawer()
     await loadProducts()
-  } catch (error) { $('#formMessage').textContent = error.message }
+  } catch (error) {
+    $('#formMessage').textContent = error.message
+    if (error.status === 409 && confirm(`${error.message}\n\n点击“确定”重新打开这个商品的最新资料，本次未保存的修改需要重新填写；点击“取消”留在当前页面，可以先记下你的修改。`)) {
+      openProductEditor(state.editingId)
+    }
+  }
   button.disabled = false
 })
 

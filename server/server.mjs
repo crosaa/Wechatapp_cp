@@ -210,6 +210,59 @@ function cleanupRemovedUploadReferences(previousValue) {
   return removed
 }
 
+// Fingerprint of everything the product editor saves. The editor sends back the
+// revision it was opened with, so a save from an outdated page (someone else saved,
+// the stock was imported, the position or status changed meanwhile) is rejected
+// instead of silently overwriting those changes. updatedAt is left out so an import
+// that did not change this product does not count as a conflict.
+function productRevision(product) {
+  const { updatedAt, ...content } = product
+  return createHash('sha1').update(JSON.stringify(content)).digest('hex').slice(0, 16)
+}
+
+let imageIssueCache = null
+
+// Image references whose files no longer exist on disk (e.g. removed by a save from an
+// outdated editor page and later saved back). Listed for every admin under 待处理问题;
+// an entry disappears as soon as the image is re-uploaded and saved.
+function missingImageIssues() {
+  const version = publicDataVersion()
+  if (imageIssueCache?.version === version && Date.now() - imageIssueCache.checkedAt < 60_000) return imageIssueCache
+  const fileExists = new Map()
+  const isMissing = value => {
+    const uploadPath = uploadPathFromValue(value)
+    if (!uploadPath) return false
+    if (!fileExists.has(uploadPath)) fileExists.set(uploadPath, Boolean(localUploadPath(uploadPath)))
+    return !fileExists.get(uploadPath)
+  }
+  const describe = groups => groups
+    .map(([label, values]) => ({ label, count: [...new Set(values)].filter(isMissing).length }))
+    .filter(group => group.count > 0)
+  const issues = []
+  for (const product of listProducts()) {
+    const problems = describe([
+      ['海报', [product.posterImage]],
+      ['商品主图', product.images || []],
+      ['颜色图', Object.values(product.colorGalleries || {}).flat()],
+      ['详情图', product.detailImages || []],
+      ['实拍图', (product.realImages || []).map(item => item?.url)]
+    ])
+    if (problems.length) issues.push({ target: 'product', id: product.id, code: product.code, name: product.name, status: product.status, problems })
+  }
+  for (const category of listCategories()) {
+    const problems = describe([['分类图片', [category.image]]])
+    if (problems.length) issues.push({ target: 'category', id: category.id, name: category.name, problems })
+  }
+  const settings = getStoreSettings()
+  const settingsProblems = describe([
+    ['首页轮播图', [...(settings.homeHeroImages || []), settings.homeHeroImage]],
+    ['店铺图标', [settings.storeIcon]]
+  ])
+  if (settingsProblems.length) issues.push({ target: 'settings', name: '首页轮播与店铺图标', problems: settingsProblems })
+  imageIssueCache = { version, checkedAt: Date.now(), issues }
+  return imageIssueCache
+}
+
 function requestIp(req) {
   const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
   return forwarded || String(req.socket.remoteAddress || 'unknown').replace(/^::ffff:/, '')
@@ -1505,10 +1558,31 @@ async function handleApi(req, res, url) {
     return true
   }
 
+  if (url.pathname === '/api/admin/issues' && req.method === 'GET') {
+    const { checkedAt, issues } = missingImageIssues()
+    json(res, 200, { data: { checkedAt: new Date(checkedAt).toISOString(), issues } })
+    return true
+  }
+
   const adminProductMatch = url.pathname.match(/^\/api\/admin\/products\/(\d+)$/)
+  // The editor loads the product fresh before editing, so a page opened long ago (or
+  // another admin's earlier save) cannot write outdated images or stock back.
+  if (adminProductMatch && req.method === 'GET') {
+    const product = getProduct(adminProductMatch[1])
+    if (!product) json(res, 404, { error: '商品不存在或已删除' })
+    else json(res, 200, { data: { ...product, revision: productRevision(product) } })
+    return true
+  }
+
   if (adminProductMatch && req.method === 'PUT') {
     const previous = getProduct(adminProductMatch[1])
-    const product = updateProduct(adminProductMatch[1], await readJson(req))
+    const { expectedRevision, revision, ...changes } = await readJson(req)
+    // Only the editor sends a revision; quick partial updates (上下架, 排序) do not.
+    if (previous && expectedRevision && expectedRevision !== productRevision(previous)) {
+      json(res, 409, { error: '保存失败：你打开编辑框之后，这个商品已被修改（其他管理员保存、调整排序或上下架、库存导入等）。为避免覆盖这些修改，本次没有保存。' })
+      return true
+    }
+    const product = updateProduct(adminProductMatch[1], changes)
     if (!product) json(res, 404, { error: '商品不存在' })
     else {
       try { cleanupRemovedUploadReferences(previous) } catch (error) { console.warn(`Product image cleanup failed: ${error.message}`) }

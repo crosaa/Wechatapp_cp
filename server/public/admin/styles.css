@@ -220,6 +220,27 @@ button { cursor: pointer; }
 .media-product-actions em { color: #397052; font-size: 9px; font-style: normal; font-weight: 800; }
 .media-product-actions em.incomplete { color: #956117; }
 .media-product-actions button { height: 30px; border: 0; border-radius: 7px; padding: 0 9px; background: var(--green); color: white; font-size: 9px; font-weight: 800; }
+.nav-badge { min-width: 20px; margin-left: auto; padding: 2px 6px; border-radius: 10px; background: var(--danger); color: white; font-size: 11px; font-weight: 800; line-height: 16px; text-align: center; }
+.issue-alert { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 14px; padding: 11px 16px; border: 1px solid #efd5d1; border-radius: 12px; background: #fdf1ef; color: var(--danger); text-decoration: none; }
+.issue-alert strong { font-size: 13px; }
+.issue-alert span { color: #8c5a54; font-size: 12px; line-height: 1.55; }
+.issue-alert em { margin-left: auto; font-size: 12px; font-style: normal; font-weight: 800; }
+.issues-panel { overflow: hidden; border: 1px solid #e4e6e0; border-radius: 18px; background: white; box-shadow: var(--shadow); }
+.issues-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 24px 26px; border-bottom: 1px solid var(--line); }
+.issues-head h2 { margin: 0; font-family: Georgia, "Songti SC", serif; font-size: 22px; }
+.issues-head > div > p:last-child { max-width: 760px; margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
+.issues-list { display: grid; gap: 10px; padding: 18px; background: #f8f9f6; }
+.issues-list:empty { display: none; }
+.issue-item { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; border: 1px solid #f0d9d5; border-radius: 12px; background: white; }
+.issue-item h3 { margin: 6px 0 4px; font-size: 14px; }
+.issue-item p { margin: 0; color: var(--danger); font-size: 12px; }
+.issue-item .primary-button, .issue-item .secondary-button { display: inline-flex; flex-shrink: 0; align-items: center; height: 36px; text-decoration: none; }
+.issue-kind { padding: 2px 7px; border-radius: 6px; background: #f0f3ef; color: #637068; font-size: 11px; }
+.issues-meta { margin: 0; padding: 12px 26px 18px; color: var(--muted); font-size: 11px; }
+.image-item.is-missing, .poster-image-item.is-missing, .color-gallery-image.is-missing, .real-image-item.is-missing { border-color: var(--danger); box-shadow: 0 0 0 2px rgba(183,73,62,.18); }
+.is-missing img { opacity: .2; }
+.is-missing .image-file-metadata { color: var(--danger); }
+.image-item.is-missing .image-item-visual::after, .real-image-item.is-missing::after { content: '图片文件已丢失'; position: absolute; top: 40%; left: 8px; right: 8px; padding: 5px 6px; border-radius: 6px; background: var(--danger); color: white; font-size: 11px; font-weight: 800; text-align: center; pointer-events: none; }
 .media-management-footer { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 12px 20px; border-top: 1px solid var(--line); background: #fafbf8; }
 .media-management-footer button:disabled { opacity: .45; cursor: not-allowed; }
 .homepage-overview { margin-bottom: 24px; overflow: hidden; border: 1px solid #e4e6e0; border-radius: 18px; background: white; box-shadow: var(--shadow); }
@@ -655,6 +676,7 @@ body.editor-open .editor-drawer { top: 58px; height: calc(100vh - 58px); }
 @media (max-width: 760px) { .unmatched-report-modal { inset: 1.5vh 2vw; } .unmatched-report-head { align-items: flex-start; padding: 16px; } .unmatched-report-head-actions { flex-direction: column-reverse; align-items: flex-end; } .unmatched-report-toolbar { align-items: stretch; flex-direction: column; padding: 12px 16px; } .unmatched-report-toolbar .search-control, .unmatched-report-toolbar select { width: 100%; max-width: none; } .unmatched-report-toolbar strong { margin-left: 0; } }
 @media (max-width: 1050px) { .inventory-mapping-summary { grid-template-columns: repeat(4, 1fr); } .inventory-mapping-summary > p { grid-column: 1 / -1; border-top: 1px solid var(--line); } }
 @media (max-width: 760px) { .inventory-mapping-head { align-items: stretch; flex-direction: column; } .inventory-mapping-head-actions { flex-wrap: wrap; } .inventory-mapping-summary { grid-template-columns: repeat(2, 1fr); } .inventory-mapping-summary > div { padding: 13px 10px; } .inventory-mapping-summary > p { padding: 13px 14px; } .inventory-mapping-toolbar { align-items: stretch; flex-direction: column; } .inventory-mapping-toolbar .search-control, .inventory-mapping-toolbar select { width: 100%; } .inventory-mapping-toolbar > strong { margin-left: 0; } }
+@media (max-width: 760px) { .issues-head, .issue-item { align-items: stretch; flex-direction: column; } .issues-head { padding: 18px 16px; } .issues-list { padding: 12px; } .issue-alert em { margin-left: 0; } }
 @media (max-width: 760px) { .media-management-head, .media-management-toolbar { align-items: stretch; flex-direction: column; } .media-management-toolbar .search-control, .media-management-toolbar select { width: 100%; } .media-management-toolbar strong { margin-left: 0; } .media-product-grid { grid-template-columns: 1fr; padding: 12px; } }
 @media (max-width: 1050px) { .account-create-card { grid-template-columns: 1fr 1fr; } .account-create-card > div:first-child { grid-column: 1 / -1; } .account-create-card > .form-message { grid-column: 1 / -1; } }
 @media (max-width: 760px) { .account-management-head, .account-list-head { align-items: flex-start; flex-direction: column; } .account-create-card { grid-template-columns: 1fr; margin: 12px; padding: 15px; } .account-create-card > div:first-child, .account-create-card > .form-message { grid-column: 1; } .account-create-actions { flex-wrap: wrap; } .account-list-card { margin: 0 12px 12px; } }
