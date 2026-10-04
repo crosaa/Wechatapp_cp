@@ -4,7 +4,10 @@ const { saveOriginalImage } = require('../../common/image')
 
 const featureIcons = ['◫', '♨', '⌁', '✓', '★', '品', '服', '定']
 const PREVIEW_IMAGE_SIZE = 2000
-// Gallery pictures kept loaded around the visible one (1 behind, this many ahead).
+// The first pictures of a gallery all start loading when it is shown, so downloads
+// and decoding finish while the page opens instead of during the first swipe.
+const GALLERY_EAGER_SLIDES = 6
+// Longer galleries keep pictures loaded around the visible one (1 behind, 3 ahead).
 const GALLERY_PRELOAD_AHEAD = 3
 
 function featureItems(features) {
@@ -135,7 +138,7 @@ function galleryState(product, color, preferColorImage = false, brokenImages = n
       original,
       display: thumbnailImage(original, 960, 'width'),
       preview: thumbnailImage(original, PREVIEW_IMAGE_SIZE, 'width'),
-      src: index === galleryCurrent ? thumbnailImage(original, 960, 'width') : ''
+      src: index < GALLERY_EAGER_SLIDES || index === galleryCurrent ? thumbnailImage(original, 960, 'width') : ''
     })),
     galleryCurrent,
     galleryIndex: galleryCurrent,
@@ -264,23 +267,12 @@ Page({
     const selection = selectProductColor(this.data.product, selectedColor)
     this.setGallery({ ...selection, selectedColor, ...galleryState(selection.product, selectedColor, true, this.brokenGalleryImages) })
   },
-  // Applies a new gallery. Pictures that were already loaded keep their src so they
-  // do not reload; if the slide on screen is one of them, the following ones are
-  // fetched right away (otherwise that happens when it finishes loading).
+  // Applies a new gallery; pictures that were already loaded keep their src so they
+  // are not requested again.
   setGallery(patch) {
     const loaded = new Set((this.data.selectedGallerySlides || []).filter(slide => slide.src).map(slide => slide.original))
     patch.selectedGallerySlides = patch.selectedGallerySlides.map(slide => (loaded.has(slide.original) ? { ...slide, src: slide.display } : slide))
-    this.setData(patch, () => {
-      if (this.loadedGalleryImages?.has(this.data.selectedGallery[this.data.galleryIndex])) this.preloadGallery(this.data.galleryIndex)
-    })
-  },
-  onGalleryImageLoad(e) {
-    const url = e.currentTarget.dataset.url
-    if (!this.loadedGalleryImages) this.loadedGalleryImages = new Set()
-    this.loadedGalleryImages.add(url)
-    // As soon as the picture on screen is shown, fetch the next ones in the background,
-    // so they are downloaded (and decoded off-screen) before the first swipe.
-    if (url === this.data.selectedGallery[this.data.galleryIndex]) this.preloadGallery(this.data.galleryIndex)
+    this.setData(patch)
   },
   onGalleryChange(e) {
     // Nothing re-renders while the swipe animates: the labels and `current` are synced in
