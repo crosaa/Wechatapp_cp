@@ -1,12 +1,17 @@
-const { fetchProduct, fetchCatalogContent, readCatalogSnapshot, refreshDataVersion, clearPublicDataCache, thumbnailImage, defaultStoreSettings } = require('../../common/api')
+const { fetchProduct, fetchCatalogContent, readCatalogSnapshot, refreshDataVersion, dataVersion, thumbnailImage, defaultStoreSettings } = require('../../common/api')
 const { appName, firstImage, appShare, timelineShare, favoriteShare } = require('../../common/share')
 
 const ALL_CATEGORY = { id: 'all', name: '全部商品', type: 'all', icon: 'ALL', tone: '#8b918a' }
 const PAGE_SIZE = 24
+// Product pages further than this (px) above or below the list viewport are
+// collapsed to empty placeholders of the same height, so DOM size and decoded
+// images stay bounded however far the list is scrolled.
+const CHUNK_KEEP_MARGIN = 1500
 const WARM_PRODUCT_LIMIT = 20
 const WARM_VISIBLE_COUNT = 1
 const WARM_PRODUCT_DELAY = 1600
 const initialCatalogSnapshot = readCatalogSnapshot()
+const initialCatalogVersion = initialCatalogSnapshot ? dataVersion() : ''
 const initialCatalogProducts = initialCatalogSnapshot?.products || []
 const initialCatalogCategories = initialCatalogSnapshot?.categories || []
 const initialCatalogSettings = initialCatalogSnapshot?.storeSettings || defaultStoreSettings
@@ -49,6 +54,48 @@ function initialCategoryState() {
 
 const initialCategory = initialCategoryState()
 
+// Only the fields the list card renders are sent to the view layer; the full
+// summaries stay in this.filteredProducts for navigation and sharing.
+function listItem(product) {
+  return {
+    id: product.id,
+    image: product.image,
+    badge: product.badge,
+    name: product.name,
+    subtitle: product.subtitle,
+    style: product.style,
+    displayCategory: product.displayCategory,
+    fabric: product.fabric,
+    stock: product.stock,
+    price: product.price
+  }
+}
+
+// One loaded page of the list; height > 0 means it is collapsed to a placeholder.
+function productChunk(products, id) {
+  return { id, height: 0, items: products.map(listItem) }
+}
+
+// Splits the first `count` products into pages. Pages that were collapsed before
+// (scrolled far away) stay collapsed, so refreshing data does not re-render them
+// or move the scroll position.
+function chunksFor(products, count, previousChunks = []) {
+  const chunks = []
+  for (let start = 0; start < count; start += PAGE_SIZE) {
+    const id = chunks.length
+    const chunk = productChunk(products.slice(start, Math.min(start + PAGE_SIZE, count)), id)
+    const previous = previousChunks[id]
+    if (previous?.height && previous.items.length === chunk.items.length) chunk.height = previous.height
+    chunks.push(chunk)
+  }
+  return chunks
+}
+
+// The side nav only needs these; productIds stay in this.catalogCategories.
+function navCategory(category) {
+  return { id: category.id, name: category.name, type: category.type }
+}
+
 function primaryProductImage(product) {
   const firstColor = Array.isArray(product?.colors) ? product.colors[0] : ''
   const colorGallery = firstColor && Array.isArray(product?.colorGalleries?.[firstColor])
@@ -80,7 +127,7 @@ function categoryShareState(page) {
   return {
     title: `${category}｜${appName()}`,
     query,
-    imageUrl: firstImage(page.data.displayProducts?.[0])
+    imageUrl: firstImage(page.filteredProducts?.[0])
   }
 }
 
@@ -88,7 +135,7 @@ Page({
   data: {
     pageNavigation: getApp().globalData.pageNavigation,
     catalogReady: Boolean(initialCatalogSnapshot),
-    categories: [ALL_CATEGORY, ...initialCatalogCategories],
+    categories: [ALL_CATEGORY, ...initialCatalogCategories].map(navCategory),
     selected: initialCategory.selected,
     selectedType: initialCategory.selectedType,
     keyword: initialCategory.keyword,
@@ -103,7 +150,7 @@ Page({
     draftMaxPrice: '',
     activeFilterCount: 0,
     searchPlaceholder: initialCatalogSettings.searchPlaceholder,
-    displayProducts: initialCategory.products.slice(0, PAGE_SIZE),
+    productChunks: chunksFor(initialCategory.products, Math.min(PAGE_SIZE, initialCategory.products.length)),
     resultCount: initialCategory.products.length,
     hasMore: initialCategory.products.length > PAGE_SIZE,
     productScrollIntoView: 'product-top-a',
@@ -116,9 +163,14 @@ Page({
     this.productWarmPromises = new Map()
     this.remoteProductIds = new Set(initialCatalogProducts.map(item => Number(item.id)))
     this.remoteProductsReady = initialCatalogProducts.length > 0
+    this.catalogCategories = initialCatalogCategories
+    this.catalogVersion = initialCatalogVersion
     this.productPool = initialCatalogProducts
     this.filteredProducts = initialCategory.products
     this.visibleCount = Math.min(PAGE_SIZE, initialCategory.products.length)
+    this.chunkObservers = []
+    this.chunkListToken = 0
+    getApp().categoryPage = this
     const hasRouteOptions = Boolean(options.keyword || options.category || options.type)
     const keyword = options.keyword ? decodeURIComponent(options.keyword) : this.data.keyword
     const requestedCategory = options.category ? decodeURIComponent(options.category) : this.data.selected
@@ -140,19 +192,23 @@ Page({
   },
   async loadRemoteProducts() {
     try {
+      // A refresh of a list the user is already looking at keeps its loaded pages and
+      // scroll position; only the first load starts from the top page.
+      const refreshing = this.remoteProductsReady && this.data.catalogReady
       const catalog = await fetchCatalogContent()
+      this.catalogVersion = dataVersion()
       const remoteProducts = catalog.products
       const remoteCategories = catalog.categories
       const storeSettings = catalog.storeSettings
-      const allCategories = [ALL_CATEGORY].concat(remoteCategories.length ? remoteCategories : this.data.categories.slice(1))
+      if (remoteCategories.length) this.catalogCategories = remoteCategories
       this.productPool = remoteProducts.length ? remoteProducts : this.productPool
       this.remoteProductIds = new Set(remoteProducts.map(item => Number(item.id)))
       this.remoteProductsReady = remoteProducts.length > 0
       this.applyProductState({
         catalogReady: true,
-        categories: allCategories,
+        categories: [ALL_CATEGORY, ...this.catalogCategories].map(navCategory),
         searchPlaceholder: storeSettings.searchPlaceholder
-      })
+      }, false, null, { keepLoaded: refreshing })
     } catch (error) {
       console.info('商品服务未启动，分类页继续使用本地演示数据', error.errMsg || error.message)
     }
@@ -160,31 +216,53 @@ Page({
   onShow() {
     this.productNavigating = false
     const intent = wx.getStorageSync('categoryIntent')
-    if (intent && intent.reset) {
-      wx.removeStorageSync('categoryIntent')
-      const reloadLatest = this.hasShownOnce
-      this.hasShownOnce = true
-      this.resetCategoryState(reloadLatest)
-      return
-    }
+    this.pageVisible = true
+    // Usually the intent was already applied while this tab was hidden (see
+    // applyIntentWhileHidden), so showing the page re-renders nothing.
+    const appliedWhileHidden = this.intentAppliedWhileHidden
+    this.intentAppliedWhileHidden = ''
+    const firstShow = !this.hasShownOnce
+    this.hasShownOnce = true
     if (intent) {
       wx.removeStorageSync('categoryIntent')
-      const intentKeyword = typeof intent.keyword === 'string' ? intent.keyword : (intent.type === 'image' ? '' : this.data.keyword)
-      const isKeywordSearch = intentKeyword.trim().length > 0
-      this.applyProductState({
-        selected: isKeywordSearch ? '全部商品' : (intent.category || this.data.selected),
-        selectedType: isKeywordSearch ? 'all' : (intent.type || (intent.category === '全部商品' ? 'all' : this.data.selectedType)),
-        keyword: intentKeyword,
-        imageMatchIds: Array.isArray(intent.productIds) ? intent.productIds.map(Number) : []
-      }, true)
+      this.applyIntent(intent)
     }
-    if (this.hasShownOnce) this.refreshRemoteDataIfChanged()
-    this.hasShownOnce = true
+    if (firstShow) return
+    // A reset asks for the latest catalog right away; other visits use the throttled check.
+    if (intent?.reset || appliedWhileHidden === 'reset') this.syncLatestCatalog()
+    else this.refreshRemoteDataIfChanged()
+  },
+  onHide() {
+    this.pageVisible = false
+  },
+  applyIntent(intent) {
+    if (intent.reset) {
+      this.resetCategoryState()
+      return
+    }
+    const intentKeyword = typeof intent.keyword === 'string' ? intent.keyword : (intent.type === 'image' ? '' : this.data.keyword)
+    const isKeywordSearch = intentKeyword.trim().length > 0
+    this.applyProductState({
+      selected: isKeywordSearch ? '全部商品' : (intent.category || this.data.selected),
+      selectedType: isKeywordSearch ? 'all' : (intent.type || (intent.category === '全部商品' ? 'all' : this.data.selectedType)),
+      keyword: intentKeyword,
+      imageMatchIds: Array.isArray(intent.productIds) ? intent.productIds.map(Number) : []
+    }, true)
+  },
+  // Called (via setCategoryIntent) when another page sets an intent: while this tab is
+  // hidden the new list is rendered right away, so switching to it shows no re-render.
+  applyIntentWhileHidden() {
+    if (this.pageVisible || !this.hasShownOnce) return
+    const intent = wx.getStorageSync('categoryIntent')
+    if (!intent) return
+    wx.removeStorageSync('categoryIntent')
+    this.applyIntent(intent)
+    this.intentAppliedWhileHidden = intent.reset ? 'reset' : 'intent'
   },
   async refreshRemoteDataIfChanged(force = false) {
     try {
-      const changed = await refreshDataVersion(force)
-      if (!changed) return false
+      await refreshDataVersion(force)
+      if (dataVersion() === this.catalogVersion) return false
       this.warmedProducts.clear()
       this.productWarmPromises.clear()
       await this.loadRemoteProducts()
@@ -200,7 +278,8 @@ Page({
     wx.navigateTo({ url: `/pages/search/search${query}` })
   },
   goBack() {
-    this.resetCategoryState(false)
+    // The home page resets this tab once it is hidden (applyIntentWhileHidden), so the
+    // list does not visibly change before the switch.
     wx.setStorageSync('categoryIntent', {
       reset: true,
       category: ALL_CATEGORY.name,
@@ -209,12 +288,7 @@ Page({
     })
     wx.switchTab({ url: '/pages/home/home' })
   },
-  resetCategoryState(reloadLatest = false) {
-    if (reloadLatest) {
-      clearPublicDataCache()
-      this.warmedProducts.clear()
-      this.productWarmPromises.clear()
-    }
+  resetCategoryState() {
     this.applyProductState({
       selected: ALL_CATEGORY.name,
       selectedType: 'all',
@@ -229,9 +303,14 @@ Page({
       draftMaxPrice: '',
       activeFilterCount: 0,
       filterOpen: false
-    }, true, () => {
-      if (reloadLatest) this.loadRemoteProducts()
-    })
+    }, true)
+  },
+  syncLatestCatalog() {
+    // Every catalog change on the server bumps the data version, so a version
+    // check is enough to stay current; the full catalog is only re-downloaded
+    // (and re-cached) when it actually changed or never loaded.
+    if (this.remoteProductsReady) this.refreshRemoteDataIfChanged(true)
+    else this.loadRemoteProducts()
   },
   selectCategory(e) {
     this.refreshRemoteDataIfChanged()
@@ -304,9 +383,9 @@ Page({
     const number = Number.parseFloat(String(value || '').trim())
     return Number.isFinite(number) && number >= 0 ? String(number) : ''
   },
-  calculateProductState(overrides = {}) {
+  calculateProductState(overrides = {}, options = {}) {
     const state = { ...this.data, ...overrides }
-    const { keyword, selected, selectedType, sort, categories, imageMatchIds, stockFilter, minPrice, maxPrice, activeFilterCount } = state
+    const { keyword, selected, selectedType, sort, imageMatchIds, stockFilter, minPrice, maxPrice, activeFilterCount } = state
     const products = this.productPool || []
     const imagePosition = new Map(imageMatchIds.map((id, index) => [Number(id), index]))
     const q = keyword.trim().toLowerCase()
@@ -328,18 +407,19 @@ Page({
       return matchKeyword && matchCategory && matchStock && matchPrice
     })
     if (sort === '综合') {
-      const category = categories.find(item => item.name === selected && item.type === selectedType)
+      const category = (this.catalogCategories || []).find(item => item.name === selected && item.type === selectedType)
       const position = selectedType === 'image' ? imagePosition : new Map((category?.productIds || []).map((id, index) => [Number(id), index]))
       list = list.slice().sort((a, b) => (position.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (position.get(b.id) ?? Number.MAX_SAFE_INTEGER))
     }
     if (sort === '价格升序') list = list.slice().sort((a, b) => a.price - b.price)
     if (sort === '价格降序') list = list.slice().sort((a, b) => b.price - a.price)
-    const visibleCount = Math.min(PAGE_SIZE, list.length)
+    const loadedCount = options.keepLoaded ? Math.max(PAGE_SIZE, this.visibleCount || 0) : PAGE_SIZE
+    const visibleCount = Math.min(loadedCount, list.length)
     return {
       list,
       visibleCount,
       patch: {
-        displayProducts: list.slice(0, visibleCount),
+        productChunks: chunksFor(list, visibleCount, options.keepLoaded ? this.data.productChunks : []),
         resultCount: list.length,
         hasMore: visibleCount < list.length,
         resultMode,
@@ -347,8 +427,8 @@ Page({
       }
     }
   },
-  applyProductState(overrides = {}, resetScroll = false, callback) {
-    const result = this.calculateProductState(overrides)
+  applyProductState(overrides = {}, resetScroll = false, callback, options = {}) {
+    const result = this.calculateProductState(overrides, options)
     this.filteredProducts = result.list
     this.visibleCount = result.visibleCount
     const patch = { ...overrides, ...result.patch }
@@ -356,7 +436,9 @@ Page({
       this.scrollAnchorToggle = !this.scrollAnchorToggle
       patch.productScrollIntoView = this.scrollAnchorToggle ? 'product-top-b' : 'product-top-a'
     }
+    this.resetChunkObservers()
     this.setData(patch, () => {
+      patch.productChunks.forEach(chunk => this.observeChunk(chunk.id))
       this.scheduleWarmProducts(result.list.slice(0, WARM_VISIBLE_COUNT))
       if (typeof callback === 'function') callback()
     })
@@ -369,15 +451,39 @@ Page({
     const list = this.filteredProducts || []
     const start = this.visibleCount || 0
     const end = Math.min(start + PAGE_SIZE, list.length)
-    const updates = {
+    const chunkId = this.data.productChunks.length
+    this.visibleCount = end
+    this.setData({
+      [`productChunks[${chunkId}]`]: productChunk(list.slice(start, end), chunkId),
       resultCount: list.length,
       hasMore: end < list.length
-    }
-    list.slice(start, end).forEach((item, index) => {
-      updates[`displayProducts[${start + index}]`] = item
-    })
-    this.visibleCount = end
-    this.setData(updates)
+    }, () => this.observeChunk(chunkId))
+  },
+  observeChunk(chunkId) {
+    const token = this.chunkListToken
+    // initialRatio 1 makes the first callback fire for a page that is already out of
+    // range when observed (e.g. after a fast fling), not only for intersecting ones.
+    const observer = this.createIntersectionObserver({ initialRatio: 1 })
+    observer
+      .relativeTo('.product-list', { top: CHUNK_KEEP_MARGIN, bottom: CHUNK_KEEP_MARGIN })
+      .observe(`#product-chunk-${chunkId}`, result => {
+        // Ignore callbacks that were already queued for a list that has since been replaced.
+        if (token !== this.chunkListToken) return
+        const chunk = this.data.productChunks[chunkId]
+        if (!chunk) return
+        if (result.intersectionRatio > 0) {
+          if (chunk.height) this.setData({ [`productChunks[${chunkId}].height`]: 0 })
+          return
+        }
+        const height = result.boundingClientRect?.height || 0
+        if (!chunk.height && height > 0) this.setData({ [`productChunks[${chunkId}].height`]: height })
+      })
+    this.chunkObservers.push(observer)
+  },
+  resetChunkObservers() {
+    this.chunkListToken += 1
+    this.chunkObservers.forEach(observer => observer.disconnect())
+    this.chunkObservers = []
   },
   scheduleWarmProducts(items) {
     if (this.warmTimer) clearTimeout(this.warmTimer)
@@ -385,10 +491,10 @@ Page({
     this.warmTimer = setTimeout(() => {
       ;(items || [])
         .filter(item => this.remoteProductIds?.has(Number(item.id)))
-        .forEach(item => this.warmProductById(Number(item.id)))
+        .forEach(item => this.warmProductById(Number(item.id), { preloadImage: true }))
     }, WARM_PRODUCT_DELAY)
   },
-  warmProductById(id) {
+  warmProductById(id, options = {}) {
     if (!id || !this.remoteProductsReady || !this.remoteProductIds?.has(Number(id))) return Promise.resolve(null)
     if (this.warmedProducts?.has(id)) return Promise.resolve(this.warmedProducts.get(id))
     if (this.productWarmPromises?.has(id)) return this.productWarmPromises.get(id)
@@ -399,7 +505,10 @@ Page({
           this.warmedProducts.delete(this.warmedProducts.keys().next().value)
         }
         this.productWarmPromises.delete(id)
-        if (!this.productNavigating) preloadImage(thumbnailImage(primaryProductImage(product), 960, 'width'))
+        // Only the idle warm-up of the first result preloads the large image; touches
+        // while scrolling just fetch the small product JSON so they do not compete
+        // with the visible list thumbnails for bandwidth.
+        if (options.preloadImage && !this.productNavigating) preloadImage(thumbnailImage(primaryProductImage(product), 960, 'width'))
         return product
       })
       .catch(() => {
@@ -442,7 +551,13 @@ Page({
   onAddToFavorites() {
     return favoriteShare(categoryShareState(this))
   },
+  onReady() {
+    // The first page rendered from initial data has no observer yet.
+    if (!this.chunkObservers.length && this.data.productChunks.length) this.observeChunk(0)
+  },
   onUnload() {
+    if (getApp().categoryPage === this) getApp().categoryPage = null
+    this.resetChunkObservers()
     if (this.warmTimer) clearTimeout(this.warmTimer)
   }
 })

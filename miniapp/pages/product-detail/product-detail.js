@@ -88,6 +88,18 @@ Page({
       'product.detailSlides': this.allDetailSlides.slice(0, visible.length + DETAIL_BATCH_SIZE)
     })
   },
+  onDetailImageError(event) {
+    const original = event.currentTarget.dataset.url
+    const visible = this.data.product.detailSlides || []
+    if (!visible.some(slide => slide.original === original)) return
+    // Hide a picture that cannot be loaded (e.g. its file is missing on the server)
+    // instead of leaving an empty box with a download button.
+    this.allDetailSlides = (this.allDetailSlides || []).filter(slide => slide.original !== original)
+    this.setData({
+      'product.detailSlides': this.allDetailSlides.slice(0, visible.length),
+      'product.detailImageCount': this.allDetailSlides.length
+    })
+  },
   previewImage(event) {
     const currentOriginal = event.currentTarget.dataset.url
     if (!currentOriginal) return

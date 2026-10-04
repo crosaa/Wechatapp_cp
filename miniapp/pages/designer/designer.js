@@ -1,5 +1,6 @@
 const { fetchProduct, refreshDataVersion, thumbnailImage } = require('../../common/api')
 const { appName, appShare, timelineShare, favoriteShare } = require('../../common/share')
+const { setCategoryIntent } = require('../../common/category-intent')
 
 const DEFAULT_TEXT = '团队名称'
 const MAX_HISTORY = 20
@@ -64,6 +65,12 @@ function normaliseFaceDesign(source = {}) {
   }
 }
 
+// The canvas shows a 960px preview instead of the original upload (often a ~2MB
+// PNG); garmentImage keeps the original URL for drafts, selection and sharing.
+function garmentFields(url) {
+  return { garmentImage: url, garmentDisplayImage: thumbnailImage(url, 960, 'width') }
+}
+
 function productImageForColor(product, color) {
   const gallery = product.colorGalleries?.[color]
   if (Array.isArray(gallery) && gallery[0]) return gallery[0]
@@ -111,7 +118,7 @@ Page({
   data: {
     pageNavigation: getApp().globalData.pageNavigation,
     product: initialDesignerProduct,
-    garmentImage: initialDesignerImage,
+    ...garmentFields(initialDesignerImage),
     baseImageOptions: initialDesignerImages,
     baseImageCount: initialDesignerImages.length,
     productColors: initialDesignerProduct.colors || [],
@@ -217,7 +224,7 @@ Page({
         face,
         ...design,
         selectedProductColor,
-        garmentImage,
+        ...garmentFields(garmentImage),
         designSourceType,
         baseImageOptions: baseImageOptions.slice(0, BASE_IMAGE_BATCH_SIZE),
         baseImageCount: baseImageOptions.length,
@@ -245,7 +252,7 @@ Page({
       face: '正面',
       ...this.faceDesigns.front,
       selectedProductColor: product.selectedColor || '',
-      garmentImage: product.sourceImage || product.image || this.data.garmentImage,
+      ...garmentFields(product.sourceImage || product.image || this.data.garmentImage),
       designSourceType: product.sourceType || '商品款式图',
       baseImageOptions: baseImageOptions.slice(0, BASE_IMAGE_BATCH_SIZE),
       baseImageCount: baseImageOptions.length,
@@ -284,7 +291,7 @@ Page({
         product: remoteProduct,
         productColors: colors,
         selectedProductColor: selectedColor,
-        garmentImage,
+        ...garmentFields(garmentImage),
         designSourceType,
         baseImageOptions: baseImageOptions.slice(0, BASE_IMAGE_BATCH_SIZE),
         baseImageCount: baseImageOptions.length,
@@ -313,7 +320,7 @@ Page({
         product,
         productColors: colors,
         selectedProductColor: selectedColor,
-        garmentImage,
+        ...garmentFields(garmentImage),
         designSourceType,
         baseImageOptions: baseImageOptions.slice(0, BASE_IMAGE_BATCH_SIZE),
         baseImageCount: baseImageOptions.length,
@@ -354,7 +361,7 @@ Page({
     const selectedColor = previous.selectedProductColor || ''
     this.applyFace(previous.face, {
       selectedProductColor: selectedColor,
-      garmentImage: previous.garmentImage || productImageForColor(this.data.product, selectedColor),
+      ...garmentFields(previous.garmentImage || productImageForColor(this.data.product, selectedColor)),
       designSourceType: previous.designSourceType || (selectedColor ? `${selectedColor}款式图` : '商品款式图'),
       dirty: true,
       canUndo: this.history.length > 0
@@ -391,7 +398,7 @@ Page({
     const garmentImage = productImageForColor(this.data.product, color)
     this.setData({
       selectedProductColor: color,
-      garmentImage,
+      ...garmentFields(garmentImage),
       designSourceType: `${color}款式图`,
       dirty: true
     })
@@ -402,7 +409,7 @@ Page({
     if (!url || url === this.data.garmentImage) return
     this.pushHistory()
     this.setData({
-      garmentImage: url,
+      ...garmentFields(url),
       designSourceType: event.currentTarget.dataset.label || '商品图片',
       selectedProductColor: event.currentTarget.dataset.color || '',
       dirty: true
@@ -613,7 +620,7 @@ Page({
         wx.removeStorageSync('designerDraft')
         this.applyFace('正面', {
           selectedProductColor: this.data.productColors[0] || '',
-          garmentImage: productImageForColor(this.data.product, this.data.productColors[0] || ''),
+          ...garmentFields(productImageForColor(this.data.product, this.data.productColors[0] || '')),
           dirty: true,
           lastSavedText: '尚未保存'
         })
@@ -622,7 +629,7 @@ Page({
   },
 
   chooseStyle() {
-    wx.setStorageSync('categoryIntent', { category: '全部商品', type: 'all' })
+    setCategoryIntent({ category: '全部商品', type: 'all' })
     wx.switchTab({ url: '/pages/category/category' })
     wx.showToast({ title: '进入商品后点击“用这款开始设计”', icon: 'none', duration: 2200 })
   },

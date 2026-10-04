@@ -32,7 +32,7 @@
   </view>
 
   <view class="hero-wrap">
-    <swiper class="hero-swiper" autoplay="{{heroSlides.length > 1}}" interval="4500" duration="500" circular="{{heroSlides.length > 1}}" bindchange="onHeroChange">
+    <swiper class="hero-swiper" autoplay="{{heroAutoplay && heroSlides.length > 1}}" interval="4500" duration="500" circular="{{heroSlides.length > 1}}" bindchange="onHeroChange">
       <swiper-item wx:for="{{heroSlides}}" wx:key="url">
         <stable-image class="hero" src="{{item.src}}" mode="{{settings.homeHeroImageMode}}" />
       </swiper-item>
@@ -54,7 +54,7 @@
     <view class="category-grid" wx:if="{{homeReady}}">
       <view class="category-item" wx:for="{{categories}}" wx:key="id" data-name="{{item.name}}" data-type="{{item.type}}" bindtap="goCategory">
         <view class="category-icon" style="background: {{item.tone}}22; color: {{item.tone}}; border-color: {{item.tone}}55;">
-      <stable-image wx:if="{{item.image}}" class="category-icon-image" src="{{item.image}}" mode="aspectFill" lazy-load="{{true}}" data-name="{{item.name}}" data-type="{{item.type}}" bind:imagetap="goCategory" />
+          <image wx:if="{{item.image}}" class="category-icon-image" src="{{item.image}}" mode="aspectFill" lazy-load="{{true}}" />
           <text wx:else>{{item.icon}}</text>
         </view>
         <text class="category-name">{{item.name}}</text>

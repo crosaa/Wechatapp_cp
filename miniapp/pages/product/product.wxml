@@ -8,15 +8,15 @@
 </view>
 <view class="page product-page">
   <view class="gallery surface">
-    <swiper class="gallery-swiper" current="{{galleryCurrent}}" indicator-dots="{{selectedGallery.length > 1}}" indicator-color="rgba(0,0,0,.2)" indicator-active-color="#d49a2e" bindchange="onGalleryChange">
+    <swiper class="gallery-swiper" current="{{galleryCurrent}}" indicator-dots="{{selectedGallery.length > 1}}" indicator-color="rgba(0,0,0,.2)" indicator-active-color="#d49a2e" bindchange="onGalleryChange" bindanimationfinish="onGalleryAnimationFinish">
       <swiper-item wx:for="{{selectedGallerySlides}}" wx:key="original">
-        <stable-image class="gallery-image" src="{{item.src}}" mode="aspectFit" data-url="{{item.original}}" bind:imagetap="previewGalleryImage" show-menu-by-longpress="{{true}}" />
+        <stable-image class="gallery-image" src="{{item.src}}" mode="aspectFit" data-url="{{item.original}}" bind:imagetap="previewGalleryImage" bind:load="onGalleryImageLoad" bind:error="onGalleryImageError" show-menu-by-longpress="{{true}}" />
       </swiper-item>
     </swiper>
     <view class="gallery-loading" wx:if="{{!selectedGallery.length}}">正在打开商品…</view>
-    <view class="gallery-download" wx:if="{{selectedGallery.length}}" data-url="{{selectedGallery[galleryCurrent]}}" catchtap="downloadOriginal">下载原图</view>
+    <view class="gallery-download" wx:if="{{selectedGallery.length}}" data-url="{{selectedGallery[galleryIndex]}}" catchtap="downloadOriginal">下载原图</view>
     <view class="gallery-action-tip" wx:if="{{selectedGallery.length}}">点击高清预览</view>
-    <view class="gallery-label" wx:if="{{selectedGallery.length}}">{{galleryLabel}} · {{galleryCurrent + 1}}/{{selectedGallery.length}}</view>
+    <view class="gallery-label" wx:if="{{selectedGallery.length}}">{{galleryLabel}} · {{galleryIndex + 1}}/{{selectedGallery.length}}</view>
   </view>
 
   <view class="product-summary surface">

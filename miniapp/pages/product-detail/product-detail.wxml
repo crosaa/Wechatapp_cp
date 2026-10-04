@@ -37,10 +37,10 @@
   <view class="detail-gallery-title"><text>DETAIL GALLERY</text><view>详情长图</view></view>
   <view class="detail-gallery surface">
     <view class="detail-slide" wx:for="{{product.detailSlides}}" wx:key="original">
-      <image src="{{item.display}}" mode="widthFix" data-url="{{item.original}}" bindtap="previewImage" show-menu-by-longpress="{{true}}" lazy-load="{{true}}" fade-in="{{false}}" />
+      <image src="{{item.display}}" mode="widthFix" data-url="{{item.original}}" bindtap="previewImage" binderror="onDetailImageError" show-menu-by-longpress="{{true}}" lazy-load="{{true}}" fade-in="{{false}}" />
       <view class="detail-slide-download" data-url="{{item.original}}" catchtap="downloadOriginal">下载原图</view>
     </view>
-    <view wx:if="{{!product.detailImages.length}}" class="detail-empty">后台暂未上传详情长图</view>
+    <view wx:if="{{!product.detailImageCount}}" class="detail-empty">后台暂未上传详情长图</view>
     <view wx:elif="{{product.detailSlides.length < product.detailImageCount}}" class="detail-loading">继续下滑加载剩余图片</view>
   </view>
 

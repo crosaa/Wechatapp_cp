@@ -30,7 +30,7 @@
     <view class="stage-tag">{{designSourceType}} · {{face}}</view>
     <view class="stage-tip">点击图层选中 · 拖动移动 · 双指缩放</view>
     <movable-area class="design-canvas">
-      <image class="garment-image {{face === '背面' ? 'back-view' : ''}}" src="{{garmentImage}}" mode="aspectFit" />
+      <image class="garment-image {{face === '背面' ? 'back-view' : ''}}" src="{{garmentDisplayImage}}" mode="aspectFit" />
 
       <movable-view
         wx:if="{{overlayImage}}"

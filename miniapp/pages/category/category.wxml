@@ -69,27 +69,31 @@
         <view id="product-top-a" class="product-scroll-anchor"></view>
         <view id="product-top-b" class="product-scroll-anchor"></view>
         <view class="result-meta"><text>{{resultTitle}}</text><text>{{resultCount}} 款</text></view>
-        <view class="list-card surface" wx:for="{{displayProducts}}" wx:key="id" data-id="{{item.id}}" bindtouchstart="warmProduct" bindtap="goProduct">
-          <view class="list-image-wrap">
-        <stable-image class="list-image" src="{{item.image}}" mode="aspectFill" lazy-load="{{true}}" data-id="{{item.id}}" bind:imagetap="goProduct" />
-            <text class="mini-badge" wx:if="{{item.badge && item.badge !== '热销' && item.badge !== '定制'}}">{{item.badge}}</text>
-          </view>
-          <view class="list-info">
-            <view class="list-name">{{item.name}}</view>
-            <view class="list-specs">
-              <view class="list-location" wx:if="{{item.subtitle}}">货位：{{item.subtitle}}</view>
-              <view class="spec-line style-line" wx:if="{{item.style || item.displayCategory}}">风格：{{item.style || item.displayCategory}}</view>
-              <view class="spec-line">面料：{{item.fabric}}</view>
-              <view wx:if="{{item.stock === 0}}" class="stock-line out">暂时缺货</view>
-              <view wx:elif="{{item.stock <= 10}}" class="stock-line low">库存紧张 · 仅剩 {{item.stock}}</view>
-              <view wx:else class="stock-line">现货 {{item.stock}}</view>
+        <view class="product-chunk" wx:for="{{productChunks}}" wx:for-item="chunk" wx:key="id" id="product-chunk-{{chunk.id}}" style="{{chunk.height ? 'height: ' + chunk.height + 'px;' : ''}}">
+          <block wx:if="{{!chunk.height}}">
+            <view class="list-card surface" wx:for="{{chunk.items}}" wx:key="id" data-id="{{item.id}}" bindtouchstart="warmProduct" bindtap="goProduct">
+              <view class="list-image-wrap">
+                <image class="list-image" src="{{item.image}}" mode="aspectFill" lazy-load="{{true}}" />
+                <text class="mini-badge" wx:if="{{item.badge && item.badge !== '热销' && item.badge !== '定制'}}">{{item.badge}}</text>
+              </view>
+              <view class="list-info">
+                <view class="list-name">{{item.name}}</view>
+                <view class="list-specs">
+                  <view class="list-location" wx:if="{{item.subtitle}}">货位：{{item.subtitle}}</view>
+                  <view class="spec-line style-line" wx:if="{{item.style || item.displayCategory}}">风格：{{item.style || item.displayCategory}}</view>
+                  <view class="spec-line">面料：{{item.fabric}}</view>
+                  <view wx:if="{{item.stock === 0}}" class="stock-line out">暂时缺货</view>
+                  <view wx:elif="{{item.stock <= 10}}" class="stock-line low">库存紧张 · 仅剩 {{item.stock}}</view>
+                  <view wx:else class="stock-line">现货 {{item.stock}}</view>
+                </view>
+                <view class="list-price"><text class="price">¥{{item.price}}</text></view>
+              </view>
             </view>
-            <view class="list-price"><text class="price">¥{{item.price}}</text></view>
-          </view>
+          </block>
         </view>
-        <view class="empty" wx:if="{{!displayProducts.length}}">暂无匹配商品</view>
+        <view class="empty" wx:if="{{!resultCount}}">暂无匹配商品</view>
         <view class="load-more" wx:if="{{hasMore}}" bindtap="loadMore">继续加载</view>
-        <view class="load-complete" wx:elif="{{displayProducts.length}}">已显示全部 {{resultCount}} 款</view>
+        <view class="load-complete" wx:elif="{{resultCount}}">已显示全部 {{resultCount}} 款</view>
       </scroll-view>
     </view>
   </view>

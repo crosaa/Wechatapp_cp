@@ -1,7 +1,9 @@
-const { fetchHomeContent, readHomeSnapshot, recognizeProductImage, refreshDataVersion, defaultStoreSettings } = require('../../common/api')
+const { fetchHomeContent, readHomeSnapshot, recognizeProductImage, refreshDataVersion, dataVersion, defaultStoreSettings } = require('../../common/api')
 const { appName, appShare, timelineShare, favoriteShare } = require('../../common/share')
+const { setCategoryIntent } = require('../../common/category-intent')
 
 const initialHomeSnapshot = readHomeSnapshot()
+const initialHomeVersion = initialHomeSnapshot ? dataVersion() : ''
 const initialHomeSettings = initialHomeSnapshot?.storeSettings || defaultStoreSettings
 const initialHeroImages = initialHomeSettings.homeHeroImages?.length ? initialHomeSettings.homeHeroImages : []
 const initialHomeCategories = initialHomeSnapshot?.categories || []
@@ -17,10 +19,12 @@ Page({
     heroSlides: initialHeroImages.map((url, index) => ({ url, src: index === 0 ? url : '' })),
     settings: initialHomeSettings,
     heroCurrent: 0,
+    heroAutoplay: true,
     imageRecognizing: false,
     categories: initialHomeCategories
   },
   onLoad() {
+    this.contentVersion = initialHomeVersion
     if (initialHomeSnapshot) {
       this.scheduleHeroNeighbors(0)
       this.refreshRemoteContent()
@@ -32,19 +36,26 @@ Page({
     this.clearHeroPrefetchTimer()
   },
   onShow() {
-    wx.setStorageSync('categoryIntent', {
+    setCategoryIntent({
       reset: true,
       category: '全部商品',
       type: 'all',
       keyword: ''
     })
     if (this.data.keyword) this.setData({ keyword: '' })
+    if (!this.data.heroAutoplay) this.setData({ heroAutoplay: true })
     if (this.hasShownOnce) this.refreshRemoteContent()
     this.hasShownOnce = true
   },
+  onHide() {
+    // Tab pages stay alive in the background; stop the carousel so it does not
+    // keep firing change events and setData while another tab is in use.
+    this.setData({ heroAutoplay: false })
+  },
   async refreshRemoteContent() {
     try {
-      if (await refreshDataVersion(true)) await this.loadRemoteContent()
+      await refreshDataVersion(true)
+      if (dataVersion() !== this.contentVersion) await this.loadRemoteContent()
     } catch (error) {
       console.info('首页同步检查失败', error.errMsg || error.message)
     }
@@ -52,6 +63,7 @@ Page({
   async loadRemoteContent() {
     try {
       this.applyHomeContent(await fetchHomeContent())
+      this.contentVersion = dataVersion()
     } catch (error) {
       console.info('商品服务未启动，首页继续使用本地演示数据', error.errMsg || error.message)
     }
@@ -152,7 +164,7 @@ Page({
           const mime = lowerPath.endsWith('.png') ? 'image/png' : lowerPath.endsWith('.webp') ? 'image/webp' : 'image/jpeg'
           const matches = await recognizeProductImage(`data:${mime};base64,${result.data}`, 20)
           if (!matches.length) throw new Error('暂未识别到相似商品')
-          wx.setStorageSync('categoryIntent', {
+          setCategoryIntent({
             category: '拍图识别结果',
             type: 'image',
             productIds: matches.map(item => Number(item.id))
@@ -175,7 +187,7 @@ Page({
   goCategory(e) {
     const name = e.currentTarget.dataset.name
     const type = e.currentTarget.dataset.type || 'normal'
-    wx.setStorageSync('categoryIntent', {
+    setCategoryIntent({
       category: name,
       type,
       keyword: '',
@@ -184,7 +196,7 @@ Page({
     wx.switchTab({ url: '/pages/category/category' })
   },
   goAll() {
-    wx.setStorageSync('categoryIntent', {
+    setCategoryIntent({
       category: '全部商品',
       type: 'all',
       keyword: '',

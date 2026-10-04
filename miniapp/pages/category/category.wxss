@@ -39,10 +39,12 @@
 .product-list.result-mode { padding-right: 22rpx; padding-left: 22rpx; }
 .result-meta { display: flex; justify-content: space-between; padding: 22rpx 5rpx 12rpx; color: #8d8980; font-size: 21rpx; }
 .result-meta text:first-child { color: #25241f; font-size: 29rpx; font-weight: 800; }
+/* overflow keeps the last card's margin inside the chunk, so a collapsed chunk has exactly the same height */
+.product-chunk { overflow: hidden; }
 .list-card { display: flex; margin-bottom: 16rpx; padding: 12rpx; border-radius: 18rpx; }
 .list-image-wrap { position: relative; width: 248rpx; height: 340rpx; flex-shrink: 0; overflow: hidden; border-radius: 12rpx; background: #f5f1ea; }
 .product-list.result-mode .list-image-wrap { width: 290rpx; height: 330rpx; }
-.list-image { width: 100%; height: 100%; }
+.list-image { display: block; width: 100%; height: 100%; background: linear-gradient(135deg, #f2efe9, #e9e5dd); }
 .mini-badge { position: absolute; left: 8rpx; top: 8rpx; padding: 4rpx 9rpx; background: rgba(31,30,27,.8); color: #fff; font-size: 17rpx; }
 .list-info { display: flex; flex: 1; flex-direction: column; justify-content: flex-start; min-width: 0; padding: 3rpx 4rpx 3rpx 18rpx; }
 .list-name { flex-shrink: 0; margin-top: 0; overflow: visible; font-size: 32rpx; font-weight: 800; line-height: 41rpx; white-space: normal; word-break: break-all; }

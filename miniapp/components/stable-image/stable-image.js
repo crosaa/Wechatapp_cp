@@ -15,8 +15,11 @@ Component({
         const retainedSource = previous && this.data.loaded
           ? previous
           : this.data.previousSrc
+        const previousSrc = retainedSource && retainedSource !== next ? retainedSource : ''
+        // Skip the no-op update when the first src arrives (state is already reset).
+        if (previousSrc === this.data.previousSrc && !this.data.loaded && !this.data.failed) return
         this.setData({
-          previousSrc: retainedSource && retainedSource !== next ? retainedSource : '',
+          previousSrc,
           loaded: false,
           failed: false
         })

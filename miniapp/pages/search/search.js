@@ -1,5 +1,6 @@
 const { getSearchHistory, saveSearchKeyword, clearSearchHistory } = require('../../common/search-history')
 const { appName, appShare, timelineShare, favoriteShare } = require('../../common/share')
+const { setCategoryIntent } = require('../../common/category-intent')
 
 Page({
   data: {
@@ -49,7 +50,7 @@ Page({
     this.setData({ keyword, searchHistory, inputFocused: false })
     this.lastHistorySignature = JSON.stringify(searchHistory)
     this.searchSubmitted = true
-    wx.setStorageSync('categoryIntent', {
+    setCategoryIntent({
       category: '全部商品',
       type: 'all',
       keyword
@@ -65,7 +66,7 @@ Page({
     this.setData({ searchHistory: clearSearchHistory(), inputFocused: true })
   },
   goBack() {
-    wx.setStorageSync('categoryIntent', {
+    setCategoryIntent({
       reset: true,
       category: '全部商品',
       type: 'all',
@@ -97,7 +98,7 @@ Page({
   },
   onUnload() {
     if (!this.searchSubmitted) {
-      wx.setStorageSync('categoryIntent', {
+      setCategoryIntent({
         reset: true,
         category: '全部商品',
         type: 'all',

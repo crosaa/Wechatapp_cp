@@ -71,7 +71,7 @@ function readPersistentCache(key, allowStoredVersion = false) {
   }
 }
 
-function writePersistentCache(key, value) {
+function writePersistentCache(key, value, options = {}) {
   if (!currentDataVersion) return
   const index = readPersistentCacheIndex()
   if (index.version !== currentDataVersion) alignPersistentCacheVersion(currentDataVersion)
@@ -92,12 +92,17 @@ function writePersistentCache(key, value) {
     activeIndex.productKeys = activeIndex.productKeys.filter(item => item !== removed)
     removePersistentCacheKey(removed)
   }
+  const entry = {
+    version: currentDataVersion,
+    savedAt: Date.now(),
+    value
+  }
   try {
-    wx.setStorageSync(storageKeyForCache(key), {
-      version: currentDataVersion,
-      savedAt: Date.now(),
-      value
-    })
+    // Large snapshots are written asynchronously so the JS thread is not blocked
+    // while the page is rendering; entries carry their version, so a write that
+    // lands late is still validated by readPersistentCache.
+    if (options.async) wx.setStorage({ key: storageKeyForCache(key), data: entry })
+    else wx.setStorageSync(storageKeyForCache(key), entry)
     savePersistentCacheIndex()
   } catch {}
 }
@@ -154,6 +159,13 @@ function acceptDataVersion(nextVersion) {
   alignPersistentCacheVersion(normalizedVersion)
   currentDataVersion = normalizedVersion
   return changed
+}
+
+// The version the cached public data belongs to. Pages compare it with the
+// version they rendered, because a change may already have been noticed (and
+// accepted) by another page, in which case refreshDataVersion reports false.
+function dataVersion() {
+  return currentDataVersion
 }
 
 function refreshDataVersion(force = false) {
@@ -392,12 +404,15 @@ function readCatalogSnapshot() {
   const cachedProducts = readPersistentCache('product-summaries:{}', true)
   const cachedCategories = readPersistentCache('categories', true)
   const cachedStoreSettings = readPersistentCache('store-settings', true)
-  if (cachedProducts === undefined || cachedCategories === undefined || cachedStoreSettings === undefined) return null
-  primePublicCache('product-summaries:{}', cachedProducts)
+  if (!Array.isArray(cachedProducts) || cachedCategories === undefined || cachedStoreSettings === undefined) return null
+  // The snapshot is stored in the compact server form; hydrating is idempotent,
+  // so snapshots saved by older versions in hydrated form still read correctly.
+  const products = cachedProducts.map(hydrateProductSummary)
+  primePublicCache('product-summaries:{}', products)
   primePublicCache('categories', cachedCategories)
   primePublicCache('store-settings', cachedStoreSettings)
   return {
-    products: cachedProducts,
+    products,
     categories: cachedCategories,
     storeSettings: cachedStoreSettings
   }
@@ -435,10 +450,14 @@ async function fetchCatalogContent() {
   const payload = result?.data || {}
   acceptDataVersion(payload.version)
   lastVersionCheckAt = Date.now()
-  const catalogProducts = (payload.products || []).map(hydrateProductSummary)
+  const rawProducts = payload.products || []
+  const catalogProducts = rawProducts.map(hydrateProductSummary)
   const catalogCategories = hydrateCategories(payload.categories || [])
   const catalogStoreSettings = hydrateStoreSettings(payload.storeSettings || {})
-  primePublicCache('product-summaries:{}', catalogProducts, true)
+  primePublicCache('product-summaries:{}', catalogProducts)
+  // Persist the server form (relative URLs, no derived fields): about 30% smaller
+  // than the hydrated list, which shortens the synchronous read on the next launch.
+  writePersistentCache('product-summaries:{}', rawProducts, { async: true })
   primePublicCache('categories', catalogCategories, true)
   primePublicCache('store-settings', catalogStoreSettings, true)
   return {
@@ -460,10 +479,12 @@ async function fetchProducts(params = {}) {
 async function fetchProductSummaries(params = {}) {
   await refreshDataVersion()
   const key = `product-summaries:${JSON.stringify(params)}`
-  return cached(key, 30 * 60 * 1000, async () => {
+  const products = await cached(key, 30 * 60 * 1000, async () => {
     const result = await request('/api/products', { ...params, view: 'summary' })
     return (result.data || []).map(hydrateProductSummary)
   }, { persistent: true })
+  // The catalog snapshot shares this key and is persisted in compact server form.
+  return products.map(hydrateProductSummary)
 }
 
 async function fetchProduct(id) {
@@ -495,4 +516,4 @@ async function recognizeProductImage(dataUrl, limit = 12) {
   return result.data || []
 }
 
-module.exports = { fetchProducts, fetchProductSummaries, fetchProduct, fetchCategories, fetchStoreSettings, fetchHomeContent, fetchCatalogContent, readHomeSnapshot, readCatalogSnapshot, readProductSnapshot, recognizeProductImage, refreshDataVersion, clearPublicDataCache, hydrateProduct, hydrateProductSummary, hydrateStoreSettings, thumbnailImage, defaultStoreSettings }
+module.exports = { fetchProducts, fetchProductSummaries, fetchProduct, fetchCategories, fetchStoreSettings, fetchHomeContent, fetchCatalogContent, readHomeSnapshot, readCatalogSnapshot, readProductSnapshot, recognizeProductImage, refreshDataVersion, dataVersion, clearPublicDataCache, hydrateProduct, hydrateProductSummary, hydrateStoreSettings, thumbnailImage, defaultStoreSettings }

@@ -4,6 +4,8 @@ const { saveOriginalImage } = require('../../common/image')
 
 const featureIcons = ['◫', '♨', '⌁', '✓', '★', '品', '服', '定']
 const PREVIEW_IMAGE_SIZE = 2000
+// Gallery pictures kept loaded around the visible one (1 behind, this many ahead).
+const GALLERY_PRELOAD_AHEAD = 3
 
 function featureItems(features) {
   return (features || []).map((name, index) => ({ name, icon: featureIcons[index % featureIcons.length] }))
@@ -119,9 +121,10 @@ function colorGalleryFor(product, color) {
   return Array.isArray(gallery) && gallery.length ? gallery : [product.images?.[0] || product.image]
 }
 
-function galleryState(product, color, preferColorImage = false) {
-  const colorGallery = colorGalleryFor(product, color).filter(Boolean)
-  const selectedGallery = [...new Set([product.posterImage, ...colorGallery].filter(Boolean))]
+function galleryState(product, color, preferColorImage = false, brokenImages = null) {
+  const usable = url => url && !brokenImages?.has(url)
+  const colorGallery = colorGalleryFor(product, color).filter(usable)
+  const selectedGallery = [...new Set([product.posterImage, ...colorGallery].filter(usable))]
   const firstColorImage = colorGallery.find(url => url !== product.posterImage) || colorGallery[0] || ''
   const colorImageIndex = firstColorImage ? selectedGallery.indexOf(firstColorImage) : 0
   const galleryCurrent = preferColorImage && colorImageIndex >= 0 ? colorImageIndex : 0
@@ -135,8 +138,13 @@ function galleryState(product, color, preferColorImage = false) {
       src: index === galleryCurrent ? thumbnailImage(original, 960, 'width') : ''
     })),
     galleryCurrent,
-    galleryLabel: product.posterImage && currentImage === product.posterImage ? '商品海报' : (color || '商品图片')
+    galleryIndex: galleryCurrent,
+    galleryLabel: galleryLabelFor(product, color, currentImage)
   }
+}
+
+function galleryLabelFor(product, color, image) {
+  return product.posterImage && image === product.posterImage ? '商品海报' : (color || '商品图片')
 }
 
 const emptyProduct = prepareProduct({
@@ -166,7 +174,10 @@ Page({
     selectedColor: '',
     selectedGallery: [],
     selectedGallerySlides: [],
+    // galleryCurrent drives the swiper and only changes programmatically (or after a
+    // swipe animation has finished); galleryIndex is the slide shown, for the labels.
     galleryCurrent: 0,
+    galleryIndex: 0,
     galleryLabel: '商品图片',
     selectedSize: '',
     displayStock: 0,
@@ -223,16 +234,16 @@ Page({
   },
   applyProduct(source, productReady) {
     const product = prepareProduct(source)
+    if (this.brokenGalleryImages?.has(product.posterImage)) product.posterImage = ''
     const selectedColor = product.colors[0] || ''
     const selection = selectProductColor(product, selectedColor)
-    this.clearGalleryPrefetchTimer()
-    this.setData({
+    this.setGallery({
       ...selection,
       selectedColor,
-      ...galleryState(product, selectedColor),
+      ...galleryState(product, selectedColor, false, this.brokenGalleryImages),
       productReady,
       loadError: false
-    }, () => this.scheduleGalleryNeighbors(this.data.galleryCurrent))
+    })
   },
   async loadRemoteProduct(id, warmPromise, skipDuplicateApply = false) {
     const settingsPromise = fetchStoreSettings()
@@ -251,40 +262,80 @@ Page({
   selectColor(e) {
     const selectedColor = e.currentTarget.dataset.value
     const selection = selectProductColor(this.data.product, selectedColor)
-    this.clearGalleryPrefetchTimer()
-    this.setData(
-      { ...selection, selectedColor, ...galleryState(selection.product, selectedColor, true) },
-      () => this.scheduleGalleryNeighbors(this.data.galleryCurrent)
-    )
+    this.setGallery({ ...selection, selectedColor, ...galleryState(selection.product, selectedColor, true, this.brokenGalleryImages) })
+  },
+  // Applies a new gallery. Pictures that were already loaded keep their src so they
+  // do not reload; if the slide on screen is one of them, the following ones are
+  // fetched right away (otherwise that happens when it finishes loading).
+  setGallery(patch) {
+    const loaded = new Set((this.data.selectedGallerySlides || []).filter(slide => slide.src).map(slide => slide.original))
+    patch.selectedGallerySlides = patch.selectedGallerySlides.map(slide => (loaded.has(slide.original) ? { ...slide, src: slide.display } : slide))
+    this.setData(patch, () => {
+      if (this.loadedGalleryImages?.has(this.data.selectedGallery[this.data.galleryIndex])) this.preloadGallery(this.data.galleryIndex)
+    })
+  },
+  onGalleryImageLoad(e) {
+    const url = e.currentTarget.dataset.url
+    if (!this.loadedGalleryImages) this.loadedGalleryImages = new Set()
+    this.loadedGalleryImages.add(url)
+    // As soon as the picture on screen is shown, fetch the next ones in the background,
+    // so they are downloaded (and decoded off-screen) before the first swipe.
+    if (url === this.data.selectedGallery[this.data.galleryIndex]) this.preloadGallery(this.data.galleryIndex)
   },
   onGalleryChange(e) {
-    const galleryCurrent = e.detail.current
-    const currentImage = this.data.selectedGallery[galleryCurrent] || ''
-    const galleryLabel = this.data.product.posterImage && currentImage === this.data.product.posterImage ? '商品海报' : (this.data.selectedColor || '商品图片')
-    this.setData({ galleryCurrent, galleryLabel })
-    this.scheduleGalleryNeighbors(galleryCurrent)
+    // Nothing re-renders while the swipe animates: the labels and `current` are synced in
+    // onGalleryAnimationFinish (writing `current` back mid-swipe makes the swiper fight
+    // the gesture). Only a slide that was never loaded gets its src here.
+    const index = Number(e.detail.current) || 0
+    const slide = this.data.selectedGallerySlides[index]
+    if (slide && !slide.src) this.setData({ [`selectedGallerySlides[${index}].src`]: slide.display })
   },
-  clearGalleryPrefetchTimer() {
-    if (this.galleryPrefetchTimer) {
-      clearTimeout(this.galleryPrefetchTimer)
-      this.galleryPrefetchTimer = null
+  onGalleryAnimationFinish(e) {
+    const galleryIndex = Number(e.detail.current) || 0
+    const galleryLabel = galleryLabelFor(this.data.product, this.data.selectedColor, this.data.selectedGallery[galleryIndex])
+    const updates = this.galleryPreloadUpdates(galleryIndex)
+    if (galleryIndex !== this.data.galleryIndex) updates.galleryIndex = galleryIndex
+    if (galleryLabel !== this.data.galleryLabel) updates.galleryLabel = galleryLabel
+    if (galleryIndex !== this.data.galleryCurrent) updates.galleryCurrent = galleryIndex
+    if (Object.keys(updates).length) this.setData(updates)
+  },
+  onGalleryImageError(e) {
+    const original = e.currentTarget.dataset.url
+    const slides = this.data.selectedGallerySlides || []
+    const removedIndex = slides.findIndex(slide => slide.original === original)
+    // Drop a picture that cannot be loaded (e.g. its file is missing on the server)
+    // instead of leaving an endless placeholder; keep at least one slide.
+    if (removedIndex < 0 || slides.length < 2) return
+    if (!this.brokenGalleryImages) this.brokenGalleryImages = new Set()
+    this.brokenGalleryImages.add(original)
+    const selectedGallerySlides = slides.filter(slide => slide.original !== original)
+    const selectedGallery = this.data.selectedGallery.filter(url => url !== original)
+    const shown = this.data.galleryIndex
+    const galleryIndex = Math.min(shown > removedIndex ? shown - 1 : shown, selectedGallerySlides.length - 1)
+    const updates = {
+      selectedGallery,
+      selectedGallerySlides,
+      galleryCurrent: galleryIndex,
+      galleryIndex,
+      galleryLabel: galleryLabelFor(this.data.product, this.data.selectedColor, selectedGallery[galleryIndex])
     }
+    if (original === this.data.product.posterImage) updates['product.posterImage'] = ''
+    this.setData(updates, () => this.preloadGallery(galleryIndex))
   },
-  scheduleGalleryNeighbors(index) {
-    this.clearGalleryPrefetchTimer()
-    this.galleryPrefetchTimer = setTimeout(() => {
-      this.galleryPrefetchTimer = null
-      const slides = this.data.selectedGallerySlides || []
-      const indexes = [index, index - 1, index + 1].filter(value => value >= 0 && value < slides.length)
-      const updates = {}
-      indexes.forEach(value => {
-        if (!slides[value].src) updates[`selectedGallerySlides[${value}].src`] = slides[value].display
-      })
-      if (Object.keys(updates).length) this.setData(updates)
-    }, 180)
+  preloadGallery(index) {
+    const updates = this.galleryPreloadUpdates(index)
+    if (Object.keys(updates).length) this.setData(updates)
+  },
+  galleryPreloadUpdates(index) {
+    const slides = this.data.selectedGallerySlides || []
+    const updates = {}
+    for (let value = index - 1; value <= index + GALLERY_PRELOAD_AHEAD; value += 1) {
+      if (slides[value] && !slides[value].src) updates[`selectedGallerySlides[${value}].src`] = slides[value].display
+    }
+    return updates
   },
   previewGalleryImage(e) {
-    const original = e.currentTarget.dataset.url || this.data.selectedGallery[this.data.galleryCurrent]
+    const original = e.currentTarget.dataset.url || this.data.selectedGallery[this.data.galleryIndex]
     const slides = this.data.selectedGallerySlides || []
     const current = slides.find(item => item.original === original)?.preview
     if (!current) return
@@ -295,7 +346,7 @@ Page({
     })
   },
   downloadOriginal(e) {
-    saveOriginalImage(e.currentTarget.dataset.url || this.data.selectedGallery[this.data.galleryCurrent])
+    saveOriginalImage(e.currentTarget.dataset.url || this.data.selectedGallery[this.data.galleryIndex])
   },
   selectSize(e) {
     if (Number(e.currentTarget.dataset.stock) <= 0) {
@@ -344,24 +395,21 @@ Page({
     return appShare({
       title: productTitle(this.data.product),
       path: `/pages/product/product?${query}`,
-      imageUrl: this.data.selectedGallery[this.data.galleryCurrent] || firstImage(this.data.product)
+      imageUrl: this.data.selectedGallery[this.data.galleryIndex] || firstImage(this.data.product)
     })
   },
   onShareTimeline() {
     return timelineShare({
       title: productTitle(this.data.product),
       query: productQuery(this.data.product),
-      imageUrl: this.data.selectedGallery[this.data.galleryCurrent] || firstImage(this.data.product)
+      imageUrl: this.data.selectedGallery[this.data.galleryIndex] || firstImage(this.data.product)
     })
   },
   onAddToFavorites() {
     return favoriteShare({
       title: productTitle(this.data.product),
       query: productQuery(this.data.product),
-      imageUrl: this.data.selectedGallery[this.data.galleryCurrent] || firstImage(this.data.product)
+      imageUrl: this.data.selectedGallery[this.data.galleryIndex] || firstImage(this.data.product)
     })
-  },
-  onUnload() {
-    this.clearGalleryPrefetchTimer()
   }
 })
