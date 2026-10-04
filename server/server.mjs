@@ -861,10 +861,13 @@ async function uploadImage(body) {
   writeFileSync(join(uploadsDir, filename), optimized.buffer)
   const url = `/uploads/${filename}`
   if (['category', 'icon'].includes(purpose)) await ensureImageThumbnail(url, 200)
-  if (purpose === 'hero') await ensureImageThumbnail(url, 1200)
+  // 960px width is what the mini program displays for heroes, galleries, detail
+  // and real photos; generating it here spares the first viewer the resize wait.
+  if (purpose === 'hero') await Promise.all([ensureImageThumbnail(url, 1200), ensureImageThumbnail(url, 960, 'width')])
   if (['product', 'poster', 'detail', 'real', 'general'].includes(purpose)) {
     await Promise.all([
       ensureImageThumbnail(url, 360),
+      ensureImageThumbnail(url, 960, 'width'),
       ensureImageThumbnail(url, 1200, 'width'),
       ensureImageThumbnail(url, 2000, 'width')
     ])
@@ -994,10 +997,11 @@ async function downloadImageToUploads(value, redirectCount = 0, options = {}) {
   if (!existsSync(filePath)) writeFileSync(filePath, optimized.buffer)
   const localUrl = `/uploads/${filename}`
   if (['category', 'icon'].includes(purpose)) await ensureImageThumbnail(localUrl, 200)
-  if (purpose === 'hero') await ensureImageThumbnail(localUrl, 1200)
+  if (purpose === 'hero') await Promise.all([ensureImageThumbnail(localUrl, 1200), ensureImageThumbnail(localUrl, 960, 'width')])
   if (['product', 'poster', 'detail', 'real', 'general'].includes(purpose)) {
     await Promise.all([
       ensureImageThumbnail(localUrl, 360),
+      ensureImageThumbnail(localUrl, 960, 'width'),
       ensureImageThumbnail(localUrl, 1200, 'width'),
       ensureImageThumbnail(localUrl, 2000, 'width')
     ])

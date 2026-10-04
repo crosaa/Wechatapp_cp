@@ -3,7 +3,7 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
-import { listProducts } from '../server/db.mjs'
+import { getStoreSettings, listProducts } from '../server/db.mjs'
 
 sharp.cache({ memory: 64, files: 20, items: 20 })
 sharp.concurrency(1)
@@ -15,7 +15,8 @@ const sizeArgument = process.argv.find(value => value.startsWith('--size='))
 const concurrencyArgument = process.argv.find(value => value.startsWith('--concurrency='))
 const limitArgument = process.argv.find(value => value.startsWith('--limit='))
 const requestedSize = Number(sizeArgument?.split('=')[1] || 2000)
-const allowedSizes = new Set([1600, 2000])
+// 960 is the display size used by the mini program; 1600/2000 are the tap-to-zoom previews.
+const allowedSizes = new Set([960, 1600, 2000])
 const size = allowedSizes.has(requestedSize) ? requestedSize : 2000
 const concurrency = Math.min(8, Math.max(1, Number(concurrencyArgument?.split('=')[1] || 2)))
 const limit = Math.max(0, Number(limitArgument?.split('=')[1] || 0))
@@ -58,7 +59,7 @@ function thumbnailJob(uploadPath) {
 }
 
 mkdirSync(thumbnailsDir, { recursive: true })
-const uploadPaths = [...collectUploadPaths(listProducts())]
+const uploadPaths = [...collectUploadPaths([listProducts(), getStoreSettings()])]
 const jobs = uploadPaths.map(thumbnailJob).filter(Boolean).slice(0, limit || undefined)
 let cursor = 0
 const summary = { size, quality, concurrency, discovered: uploadPaths.length, processed: jobs.length, created: 0, skipped: 0, failed: 0 }

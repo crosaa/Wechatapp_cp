@@ -119,3 +119,9 @@ npm run build:image-thumbnails
 ```
 
 该任务默认并发处理 2 张图片；服务器资源较充足时可使用 `node scripts/build-image-thumbnails.mjs --concurrency=4`。
+
+小程序的商品大图、首页轮播、详情图和实拍图统一按 960px 宽显示。新上传的图片会自动生成该尺寸；历史图片需执行一次以下命令补齐，避免用户首次打开时等待服务器临时缩图：
+
+```bash
+node scripts/build-image-thumbnails.mjs --size=960
+```
