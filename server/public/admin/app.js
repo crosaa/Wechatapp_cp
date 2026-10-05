@@ -5,6 +5,9 @@ const state = {
   adminUsers: [],
   issues: [],
   issuesCheckedAt: '',
+  issueDetail: null,
+  issuePreview: null,
+  issueSelection: new Set(),
   editingRevision: '',
   products: [],
   categories: [],
@@ -916,21 +919,21 @@ function renderIssueIndicators() {
   $('#issueAlert').classList.toggle('is-hidden', !count || activeAdminPage === 'issues')
 }
 
+function issueTitle(issue) {
+  return issue.target === 'product' ? `${issue.code ? `${issue.code} · ` : ''}${issue.name}` : issue.name
+}
+
+function issueSummary(issue) {
+  return issue.problems.map(problem => `${problem.label} ${problem.count} 张`).join('、')
+}
+
 function renderIssues() {
-  const targets = {
-    product: issue => ({ kind: issue.status === 'published' ? '已上架商品' : '草稿商品', title: `${issue.code ? `${issue.code} · ` : ''}${issue.name}` }),
-    category: issue => ({ kind: '分类', title: issue.name, page: 'categories' }),
-    settings: issue => ({ kind: '店铺设置', title: issue.name, page: 'settings' })
-  }
-  $('#issuesList').innerHTML = state.issues.map(issue => {
-    const { kind, title, page } = (targets[issue.target] || targets.settings)(issue)
-    const detail = issue.problems.map(problem => `${problem.label} ${problem.count} 张`).join('、')
-    const action = issue.target === 'product'
-      ? `<button type="button" class="primary-button" data-issue-product="${Number(issue.id)}">去修复</button>`
-      : `<a class="secondary-button" href="#${page}">去修复</a>`
+  const kinds = { category: '分类', settings: '店铺设置' }
+  $('#issuesList').innerHTML = state.issues.map((issue, index) => {
+    const kind = issue.target === 'product' ? (issue.status === 'published' ? '已上架商品' : '草稿商品') : (kinds[issue.target] || '店铺设置')
     return `<article class="issue-item">
-      <div><span class="issue-kind">${kind}</span><h3>${escapeHtml(title)}</h3><p>图片文件已丢失：${escapeHtml(detail)}</p></div>
-      ${action}
+      <div><span class="issue-kind">${kind}</span><h3>${escapeHtml(issueTitle(issue))}</h3><p>图片文件已丢失：${escapeHtml(issueSummary(issue))}</p></div>
+      <button type="button" class="primary-button" data-issue-detail="${index}">查看详情</button>
     </article>`
   }).join('')
   $('#issuesEmpty').classList.toggle('is-hidden', state.issues.length > 0)
@@ -2178,8 +2181,558 @@ $('#mediaProductGrid').addEventListener('click', event => {
 })
 
 $('#issuesList').addEventListener('click', event => {
-  const button = event.target.closest('[data-issue-product]')
-  if (button) openProductEditor(button.dataset.issueProduct)
+  const button = event.target.closest('[data-issue-detail]')
+  const issue = button && state.issues[Number(button.dataset.issueDetail)]
+  if (issue) openIssueDetail(issue)
+})
+
+// Issue detail: previews the product the way customers see it in the mini program
+// (product page, detail page, real photos, category list) with every missing picture
+// shown in its place, so the admin decides per picture whether to re-upload or remove.
+const issueFeatureIcons = ['◫', '♨', '⌁', '✓', '★', '品', '服', '定']
+const issueScreenNames = { product: '商品页', detail: '详情页', real: '实拍图', list: '分类页', other: '其他' }
+// Where to look for a missing picture first, by the field it belongs to.
+const issueScreenOrder = {
+  posterImage: ['product'],
+  colorGalleries: ['product', 'other'],
+  images: ['list', 'product', 'detail', 'real', 'other'],
+  detailImages: ['detail'],
+  realImages: ['real']
+}
+
+function issueThumb(path, size = 960) {
+  const value = String(path || '')
+  if (!value.startsWith('/uploads/')) return value
+  return `/api/product-thumbnail?src=${encodeURIComponent(value)}&size=${size}${size >= 960 ? '&fit=width' : ''}`
+}
+
+function issueAnchor(field, color, path) {
+  return `${field}|${color || ''}|${path}`
+}
+
+function issueLocation(entry) {
+  if (entry.field === 'posterImage') return '商品页 · 海报'
+  if (entry.field === 'images') return entry.position === 1 ? '商品主图 · 第 1 张（列表封面）' : `商品主图 · 第 ${entry.position} 张`
+  if (entry.field === 'colorGalleries') {
+    const colors = state.issuePreview?.product?.colors
+    if (colors && !colors.includes(entry.color)) return `已删除的颜色「${entry.color}」· 第 ${entry.position} 张`
+    return `商品页 · ${entry.color} 第 ${entry.position} 张`
+  }
+  if (entry.field === 'detailImages') return `商品详情页 · 第 ${entry.position} 张`
+  if (entry.field === 'realImages') return `实拍图页 · 第 ${entry.position} 张${entry.category ? `（${entry.category}）` : ''}`
+  if (entry.field === 'image') return '分类图片'
+  if (entry.field === 'storeIcon') return '店铺图标'
+  return `首页轮播图 · 第 ${entry.position} 张`
+}
+
+function issueIsMissing(path) {
+  return Boolean(path) && state.issuePreview.missingPaths.has(path)
+}
+
+function issueMissingCount(paths = []) {
+  return new Set(paths.filter(issueIsMissing)).size
+}
+
+// A picture slot in the preview: the real picture, or a red marker where a missing one sits.
+function issueSlot(path, { field, color = '', label, size = 960, className = '' }) {
+  if (!issueIsMissing(path)) {
+    return `<img class="${className}" src="${escapeHtml(issueThumb(path, size))}" alt="${escapeHtml(label)}" loading="lazy" decoding="async" />`
+  }
+  return `<label class="mp-missing ${className}" data-issue-anchor="${escapeHtml(issueAnchor(field, color, path))}" data-issue-path="${escapeHtml(path)}">
+    <strong>图片文件已丢失</strong>
+    <span>${escapeHtml(label)}</span>
+    <small>${escapeHtml(path.split('/').pop())}</small>
+    <span class="mp-missing-check"><input type="checkbox" data-issue-missing-path="${escapeHtml(path)}" ${state.issueSelection.has(path) ? 'checked' : ''} /> 删除这张</span>
+  </label>`
+}
+
+function issuePriceForSize(product, size) {
+  const sizes = product.sizes || []
+  const index = sizes.indexOf(size)
+  const range = (product.specialSizePrices || []).find(item => {
+    const from = sizes.indexOf(item.fromSize)
+    const to = sizes.indexOf(item.toSize)
+    return index >= 0 && from >= 0 && to >= from && index >= from && index <= to
+  })
+  return range ? { price: Number(range.price) || 0, special: true } : { price: Number(product.price) || 0, special: false }
+}
+
+function issueMainImage(product) {
+  return product.images?.[0] || product.image || ''
+}
+
+// The colour's swiper pictures, picked like the mini program does: the colour's own
+// pictures, else the first main picture.
+function issueColorGallery(product, color) {
+  const own = (product.colorGalleries?.[color] || []).filter(Boolean)
+  if (!own.length && product.colorImages?.[color]) own.push(product.colorImages[color])
+  return own.length ? { paths: own, own: true } : { paths: [issueMainImage(product)].filter(Boolean), own: false }
+}
+
+// Real photos as the mini program lists them; without any, it shows the main pictures.
+function issueRealPhotos(product) {
+  const real = product.realImages || []
+  if (real.some(item => item?.url)) {
+    return real.map((item, index) => ({ url: item?.url, category: item?.category || '实物展示', field: 'realImages', label: `实拍图 第 ${index + 1} 张` })).filter(photo => photo.url)
+  }
+  return (product.images || []).filter(Boolean).map((url, index) => ({ url, category: '实物展示', field: 'images', label: `商品主图 第 ${index + 1} 张（未上传实拍图时显示）` }))
+}
+
+// Every picture each screen shows; used for the per-screen counts and to find a picture.
+function issueScreenPaths(product, issue) {
+  const colors = product.colors?.length ? product.colors : ['']
+  const details = (product.detailImages || []).filter(Boolean)
+  const paths = {
+    product: [product.posterImage, ...colors.flatMap(color => issueColorGallery(product, color).paths)].filter(Boolean),
+    detail: [issueMainImage(product), ...(details.length ? details : (product.images || []))].filter(Boolean),
+    real: issueRealPhotos(product).map(photo => photo.url),
+    list: [issueMainImage(product)].filter(Boolean)
+  }
+  const shown = new Set(Object.values(paths).flat())
+  paths.other = [...new Set(issue.missing.map(entry => entry.path).filter(path => !shown.has(path)))]
+  return paths
+}
+
+function issueNav(title, back = '') {
+  return `<div class="mp-nav">${back ? `<button type="button" class="mp-nav-back" data-issue-screen="${back}" aria-label="返回"></button>` : ''}<span>${escapeHtml(title)}</span></div>`
+}
+
+function issueSubpageBar() {
+  return '<div class="mp-bottom-bar"><span>⌂<br />首页</span><b class="mp-return" data-issue-screen="product">返回商品</b></div>'
+}
+
+function issueProductScreen() {
+  const { product, color } = state.issuePreview
+  const gallery = issueColorGallery(product, color)
+  const slides = [...new Set([product.posterImage, ...gallery.paths].filter(Boolean))]
+  const slideHtml = slides.map(path => {
+    const field = path === product.posterImage ? 'posterImage' : (gallery.own ? 'colorGalleries' : 'images')
+    const label = field === 'posterImage' ? '商品海报' : (field === 'colorGalleries' ? `${color} 第 ${gallery.paths.indexOf(path) + 1} 张` : '商品主图 第 1 张')
+    return `<div class="mp-slide" data-poster="${field === 'posterImage' ? 1 : 0}">${issueSlot(path, { field, color: field === 'colorGalleries' ? color : '', label })}</div>`
+  }).join('')
+  const stocks = product.colorSizeStocks?.[color] || product.sizeStocks || {}
+  const sizeOptions = (product.sizes || []).map(name => ({ name, stock: Math.max(0, Number(stocks[name]) || 0), ...issuePriceForSize(product, name) }))
+  const selectedSize = sizeOptions.find(option => option.stock > 0)
+  const stock = sizeOptions.reduce((total, option) => total + option.stock, 0)
+  const pill = stock === 0 ? '<span class="mp-pill out">当前颜色暂时缺货</span>' : (stock <= 10 ? `<span class="mp-pill low">当前颜色库存紧张：仅剩 ${stock}</span>` : `<span class="mp-pill">当前颜色现货库存：${stock}</span>`)
+  const missingColors = new Set((product.colors || []).filter(name => issueColorGallery(product, name).paths.some(issueIsMissing)))
+  const detailCount = (product.detailImages || []).length || (product.images || []).length
+  const realCount = (product.realImages || []).length || (product.images || []).length
+  const missingOn = screen => issueMissingCount(state.issuePreview.screenPaths[screen])
+  const missingNote = screen => (missingOn(screen) ? ` <em class="mp-entry-missing">· 丢失 ${missingOn(screen)} 张</em>` : '')
+  const features = (state.settings?.productFeatures || []).map((name, index) => `<span><i>${issueFeatureIcons[index % issueFeatureIcons.length]}</i>${escapeHtml(name)}</span>`).join('')
+  return `${issueNav('商品详情', 'list')}
+    <div class="mp-scroll">
+      <div class="mp-gallery">
+        <div class="mp-gallery-track" data-issue-gallery>${slideHtml || '<div class="mp-slide"><p class="mp-empty">暂无商品图片</p></div>'}</div>
+        ${slides.length > 1 ? `<div class="mp-gallery-dots">${slides.map((path, index) => `<i class="${index ? '' : 'active'}"></i>`).join('')}</div>` : ''}
+        ${slides.length ? `<span class="mp-gallery-download">下载原图</span>
+        <span class="mp-gallery-tip">点击高清预览</span>
+        <span class="mp-gallery-label" data-issue-gallery-label>${slides[0] === product.posterImage ? '商品海报' : escapeHtml(color || '商品图片')} · 1/${slides.length}</span>` : ''}
+      </div>
+      <div class="mp-card">
+        <div class="mp-summary-top">
+          <div><span class="mp-price-symbol">¥</span><span class="mp-price">${escapeHtml(String(selectedSize?.price ?? product.price))}</span>${selectedSize?.special ? '<span class="mp-special">特殊尺码价</span>' : ''}</div>
+          <div class="mp-poster-action"><b>▧</b>海报</div>
+        </div>
+        <div class="mp-title">${escapeHtml(product.name)}</div>
+        ${product.subtitle ? `<div class="mp-location"><span>货位</span>${escapeHtml(product.subtitle)}</div>` : ''}
+        <div class="mp-inventory">${pill}<small>库存与管理后台同步</small></div>
+        ${product.badge && product.badge !== '热销' && product.badge !== '定制' ? `<div class="mp-tag">${escapeHtml(product.badge)}</div>` : ''}
+      </div>
+      <div class="mp-card">
+        <div class="mp-option-label">颜色 <small>已选 ${escapeHtml(color || '—')}</small></div>
+        <div class="mp-chips">${(product.colors || []).map(name => `<button type="button" class="mp-chip ${name === color ? 'active' : ''} ${missingColors.has(name) ? 'has-missing' : ''}" data-issue-color="${escapeHtml(name)}">${escapeHtml(name)}</button>`).join('')}</div>
+        <div class="mp-option-label">尺码 <small>${selectedSize ? `已选 ${escapeHtml(selectedSize.name)}` : '暂无可选尺码'}</small></div>
+        <div class="mp-chips">${sizeOptions.map(option => `<span class="mp-chip ${option === selectedSize ? 'active' : ''} ${option.stock === 0 ? 'disabled' : ''}">${escapeHtml(option.name)}<small>${option.stock === 0 ? '缺货' : `库存 ${option.stock}${option.special ? ` · ¥${option.price}` : ''}`}</small></span>`).join('')}</div>
+      </div>
+      <div class="mp-card mp-entries">
+        <button type="button" class="mp-entry" data-issue-screen="detail"><i class="detail">详</i><span><b>商品详情</b><small>点击后逐张翻看 · ${detailCount} 张${missingNote('detail')}</small></span><em>›</em></button>
+        <button type="button" class="mp-entry" data-issue-screen="real"><i class="real">实</i><span><b>实拍图</b><small>按分类逐张翻看 · ${realCount} 张${missingNote('real')}</small></span><em>›</em></button>
+      </div>
+      <div class="mp-card">
+        <div class="mp-info-title">商品信息 <small>PRODUCT INFO</small></div>
+        <div class="mp-info"><span><i>品类</i>${escapeHtml(product.displayCategory || product.category || '')}</span><span><i>面料</i>${escapeHtml(product.fabric || '')}</span><span><i>风格</i>${escapeHtml(product.style || '')}</span><span><i>版型</i>${escapeHtml(product.fit || '')}</span></div>
+      </div>
+      ${features ? `<div class="mp-card mp-features">${features}</div>` : ''}
+    </div>
+    <div class="mp-bottom-bar"><span>⌂<br />首页</span><b>用这款开始设计 →</b></div>`
+}
+
+function issueDetailScreen() {
+  const { product } = state.issuePreview
+  const hero = issueMainImage(product)
+  const ownDetails = (product.detailImages || []).filter(Boolean)
+  // Without detail pictures the mini program shows the main pictures here.
+  const slides = ownDetails.length
+    ? ownDetails.map((path, index) => ({ path, field: 'detailImages', label: `详情图 第 ${index + 1} 张` }))
+    : (product.images || []).filter(Boolean).map((path, index) => ({ path, field: 'images', label: `商品主图 第 ${index + 1} 张（未上传详情图时显示）` }))
+  return `${issueNav('商品详情', 'product')}
+    <div class="mp-scroll">
+      <div class="mp-detail-hero ${issueIsMissing(hero) ? 'is-missing' : ''}">
+        ${hero ? issueSlot(hero, { field: 'images', label: '商品主图 第 1 张（详情页头图）' }) : ''}
+        <div class="mp-detail-actions"><span>点击高清预览</span><span class="mp-download">下载原图</span></div>
+        <div class="mp-detail-copy"><small>${escapeHtml(product.code || '')}</small><b>${escapeHtml(product.name)}</b>${product.subtitle ? `<span>货位：${escapeHtml(product.subtitle)}</span>` : ''}</div>
+      </div>
+      <div class="mp-card mp-detail-intro">
+        <div class="mp-heading"><small>PRODUCT STORY</small><b>商品详情</b></div>
+        <p>${escapeHtml(product.detailText || '暂无商品详情')}</p>
+        <div class="mp-detail-points">
+          <span><i>01</i><b>面料品质</b><small>${escapeHtml(product.fabric || '')}</small></span>
+          <span><i>02</i><b>适用风格</b><small>${escapeHtml(product.style || '')}</small></span>
+          <span><i>03</i><b>团体定制</b><small>支持刺绣与印花</small></span>
+        </div>
+      </div>
+      <div class="mp-heading mp-gallery-heading"><small>DETAIL GALLERY</small><b>详情长图</b></div>
+      <div class="mp-detail-gallery">
+        ${slides.length
+          ? slides.map(slide => `<div class="mp-detail-slide">${issueSlot(slide.path, slide)}${issueIsMissing(slide.path) ? '' : '<span class="mp-download">下载原图</span>'}</div>`).join('')
+          : '<p class="mp-empty mp-detail-empty">后台暂未上传详情长图</p>'}
+      </div>
+      <div class="mp-card mp-detail-spec"><span><i>品类</i>${escapeHtml(product.displayCategory || product.category || '')}</span><span><i>面料</i>${escapeHtml(product.fabric || '')}</span><span><i>可选颜色</i>${(product.colors || []).length} 种</span></div>
+    </div>
+    ${issueSubpageBar()}`
+}
+
+function issueRealScreen() {
+  const { product } = state.issuePreview
+  const photos = issueRealPhotos(product)
+  const categories = ['全部', ...new Set(photos.map(photo => photo.category))]
+  const selected = categories.includes(state.issuePreview.realCategory) ? state.issuePreview.realCategory : '全部'
+  const shown = selected === '全部' ? photos : photos.filter(photo => photo.category === selected)
+  const tabMissing = name => photos.some(photo => (name === '全部' || photo.category === name) && issueIsMissing(photo.url))
+  return `${issueNav('实拍图', 'product')}
+    <div class="mp-scroll">
+      <div class="mp-real-header"><small>REAL PRODUCT PHOTOS</small><b>${escapeHtml(product.name)}</b><span>商品实拍 · 按图片分类查看</span></div>
+      <div class="mp-photo-tabs">${categories.map(name => `<button type="button" class="${name === selected ? 'active' : ''} ${tabMissing(name) ? 'has-missing' : ''}" data-issue-real-category="${escapeHtml(name)}">${escapeHtml(name)}</button>`).join('')}</div>
+      <div class="mp-photo-meta"><b>${escapeHtml(selected)}</b><span>${shown.length} 张实拍图</span></div>
+      ${shown.length
+        ? `<div class="mp-photo-grid">${shown.map(photo => `<div class="mp-photo-card">
+            ${issueSlot(photo.url, { field: photo.field, label: photo.label, size: 360 })}
+            <div class="mp-photo-row"><b>${escapeHtml(photo.category)}</b>${issueIsMissing(photo.url) ? '' : '<span>下载原图</span>'}</div>
+            <div class="mp-photo-design"><span>以本图开始设计</span><span>→</span></div>
+          </div>`).join('')}</div>`
+        : '<p class="mp-empty mp-photo-empty">该分类暂未上传实拍图</p>'}
+    </div>
+    ${issueSubpageBar()}`
+}
+
+function issueListScreen() {
+  const { product } = state.issuePreview
+  const cover = issueMainImage(product)
+  const selected = productCategoryNames(product)[0] || '全部商品'
+  const names = ['全部商品', ...state.categories.map(category => category.name)]
+  if (!names.includes(selected)) names.push(selected)
+  const stock = Number(product.stock) || 0
+  const stockLine = stock === 0 ? '<em class="out">暂时缺货</em>' : (stock <= 10 ? `<em class="low">库存紧张 · 仅剩 ${stock}</em>` : `<em>现货 ${stock}</em>`)
+  return `${issueNav('商品分类')}
+    <div class="mp-category-header">
+      <div class="mp-search"><i>⌕</i>${escapeHtml(state.settings?.searchPlaceholder || '搜索款号、品类或面料')}</div>
+      <div class="mp-sort"><span class="active">综合</span><span>价格 ↑</span><span>价格 ↓</span><span class="mp-sort-filter">筛选 ⌄</span></div>
+    </div>
+    <div class="mp-catalog">
+      <div class="mp-side-nav">${names.map(name => `<span class="${name === selected ? 'active' : ''}">${escapeHtml(name)}</span>`).join('')}</div>
+      <div class="mp-scroll mp-product-list">
+        <div class="mp-result-meta"><b>${escapeHtml(selected)}</b></div>
+        <div class="mp-list-card" data-issue-screen="product" role="button" tabindex="0" title="打开商品页">
+          <div class="mp-list-image">${cover ? issueSlot(cover, { field: 'images', label: '列表封面（商品主图 第 1 张）', size: 360 }) : ''}${product.badge && product.badge !== '热销' && product.badge !== '定制' ? `<i class="mp-mini-badge">${escapeHtml(product.badge)}</i>` : ''}</div>
+          <div class="mp-list-info">
+            <b>${escapeHtml(product.name)}</b>
+            ${product.subtitle ? `<span class="mp-list-location">货位：${escapeHtml(product.subtitle)}</span>` : ''}
+            ${product.style || product.displayCategory ? `<span>风格：${escapeHtml(product.style || product.displayCategory)}</span>` : ''}
+            <span>面料：${escapeHtml(product.fabric || '')}</span>
+            ${stockLine}
+            <strong>¥${escapeHtml(String(product.price))}</strong>
+          </div>
+        </div>
+        <p class="mp-list-note">同一分类里的其他商品省略</p>
+      </div>
+    </div>`
+}
+
+// Missing pictures that none of the screens above show: main pictures only offered as
+// base pictures in the designer, or pictures of a colour that was deleted.
+function issueOtherScreen() {
+  const { issue, screenPaths } = state.issuePreview
+  const entries = issue.missing.filter((entry, index, list) => screenPaths.other.includes(entry.path) && list.findIndex(item => item.path === entry.path) === index)
+  return `${issueNav('其他位置', 'product')}
+    <div class="mp-scroll">
+      <p class="mp-screen-note">下面的图片不在商品页、详情页、实拍图页和分类列表中显示。商品主图（第 2 张起）只出现在“用这款开始设计”的底图选择里；已删除颜色的图片顾客看不到。</p>
+      <div class="mp-thumb-grid">${entries.map(entry => `<figure>${issueSlot(entry.path, { field: entry.field, color: entry.color, label: issueLocation(entry), size: 360 })}<figcaption>${escapeHtml(issueLocation(entry))}</figcaption></figure>`).join('')}</div>
+    </div>`
+}
+
+const issueScreens = { product: issueProductScreen, detail: issueDetailScreen, real: issueRealScreen, list: issueListScreen, other: issueOtherScreen }
+
+function issueScreenTabs() {
+  const { screen, screenPaths } = state.issuePreview
+  return Object.keys(issueScreens)
+    .filter(key => key !== 'other' || screenPaths.other.length)
+    .map(key => {
+      const count = issueMissingCount(screenPaths[key])
+      return `<button type="button" class="${key === screen ? 'active' : ''}" data-issue-screen="${key}"${count ? ` title="这一页有 ${count} 张图片丢失"` : ''}>${issueScreenNames[key]}${count ? `<em>${count}</em>` : ''}</button>`
+    }).join('')
+}
+
+function renderIssuePhone() {
+  const preview = state.issuePreview
+  if (!issueScreens[preview.screen] || (preview.screen === 'other' && !preview.screenPaths.other.length)) preview.screen = 'product'
+  const phone = $('#issuePhone')
+  // Re-rendering the same screen (e.g. another colour) keeps the scroll position.
+  const sameScreen = phone.dataset.screen === preview.screen
+  const scrollTop = sameScreen ? phone.querySelector('.mp-scroll')?.scrollTop || 0 : 0
+  $('#issueScreenTabs').innerHTML = issueScreenTabs()
+  phone.dataset.screen = preview.screen
+  phone.innerHTML = `<section class="mp-page" data-issue-page="${preview.screen}">${issueScreens[preview.screen]()}</section>`
+  const scroller = phone.querySelector('.mp-scroll')
+  if (scroller) scroller.scrollTop = scrollTop
+  // Like the mini program, the side nav shows the product's category.
+  const sideNav = phone.querySelector('.mp-side-nav')
+  const activeCategory = sideNav?.querySelector('.active')
+  if (activeCategory) sideNav.scrollTop = activeCategory.offsetTop - (sideNav.clientHeight - activeCategory.offsetHeight) / 2
+}
+
+// Keeps the gallery counter ("商品海报 · 1/3") and dots in step while swiping the preview.
+function syncIssueGallery(track) {
+  const slides = track.querySelectorAll('.mp-slide')
+  const index = Math.max(0, Math.min(slides.length - 1, Math.round(track.scrollLeft / Math.max(1, track.clientWidth))))
+  const isPoster = slides[index]?.dataset.poster === '1'
+  const label = track.parentElement.querySelector('[data-issue-gallery-label]')
+  if (label) label.textContent = `${isPoster ? '商品海报' : (state.issuePreview?.color || '商品图片')} · ${index + 1}/${slides.length}`
+  track.parentElement.querySelectorAll('.mp-gallery-dots i').forEach((dot, dotIndex) => dot.classList.toggle('active', dotIndex === index))
+}
+
+function issueMissingPanel(issue) {
+  return `<aside class="issue-missing-panel">
+    <h3>丢失的图片 · ${issue.missing.length} 张</h3>
+    <p>红框是服务器上已经找不到文件的图片，顾客在小程序里已经看不到它们。勾选的会被删除；取消勾选的会保留在待处理问题中，之后可以重新上传。点击位置可在手机预览中找到它。</p>
+    <ul>${issue.missing.map(entry => `<li>
+      <label><input type="checkbox" data-issue-missing-path="${escapeHtml(entry.path)}" ${state.issueSelection.has(entry.path) ? 'checked' : ''} /> 删除</label>
+      <button type="button" data-issue-locate="${escapeHtml(issueAnchor(entry.field, entry.color, entry.path))}">${escapeHtml(issueLocation(entry))}</button>
+      <small>${escapeHtml(entry.path.split('/').pop())}</small>
+    </li>`).join('')}</ul>
+  </aside>`
+}
+
+async function issueStorePreview(issue) {
+  if (issue.target === 'category') {
+    const category = state.categories.find(item => item.id === issue.id) || { name: issue.name }
+    return `${issueNav('首页')}
+      <div class="mp-scroll">
+        <p class="mp-section-title">热门分类</p>
+        <div class="mp-card mp-category-tile">${issueSlot(issue.missing[0].path, { field: 'image', label: `分类图片 · ${category.name}`, size: 360 })}<b>${escapeHtml(category.name)}</b></div>
+      </div>`
+  }
+  const { data: settings } = await api('/api/admin/store-settings')
+  const heroes = [...new Set([...(settings.homeHeroImages || []), ...issue.missing.filter(entry => entry.field === 'homeHeroImage').map(entry => entry.path)])]
+  const heroField = path => issue.missing.find(entry => entry.path === path && entry.field.startsWith('homeHero'))?.field || 'homeHeroImages'
+  return `${issueNav('首页')}
+    <div class="mp-scroll">
+      <div class="mp-card mp-brand">${settings.storeIcon ? `<div class="mp-brand-icon">${issueSlot(settings.storeIcon, { field: 'storeIcon', label: '店铺图标', size: 360 })}</div>` : ''}<b>${escapeHtml(settings.storeName || '')}</b></div>
+      <p class="mp-section-title">首页轮播图</p>
+      <div class="mp-hero-track">${heroes.map((path, index) => `<div class="mp-hero-slide">${issueSlot(path, { field: heroField(path), label: `轮播图 第 ${index + 1} 张` })}</div>`).join('')}</div>
+    </div>`
+}
+
+async function openIssueDetail(issue, { selectAll = true } = {}) {
+  state.issueDetail = issue
+  state.issueSelection = new Set(selectAll ? issue.missing.map(entry => entry.path) : [])
+  $('#issueDetailTitle').textContent = issueTitle(issue)
+  $('#issueDetailSummary').textContent = `图片文件已丢失：${issueSummary(issue)}`
+  $('#issueDetailFix').textContent = issue.target === 'product' ? '去编辑器重新上传' : (issue.target === 'category' ? '去分类管理重新上传' : '去店铺设置重新上传')
+  $('#issueDetailHint').textContent = issue.target === 'product'
+    ? '左侧按小程序里的真实页面展示这个商品，可以像在手机上一样点进商品详情、实拍图；红框是服务器上已丢失的图片。还需要的请去重新上传；不需要的勾选后删除，未勾选的会保留在待处理问题中。'
+    : '左侧按小程序首页展示这张图片所在的位置，红框是服务器上已丢失的图片。还需要的请去重新上传；不需要的勾选后删除，未勾选的会保留在待处理问题中。'
+  $('#issueDetailBody').innerHTML = '<p class="issue-detail-loading">正在读取最新资料…</p>'
+  $('#issueDetailModal').classList.remove('is-hidden')
+  $('#issueDetailBackdrop').classList.remove('is-hidden')
+  updateIssueDetailActions()
+  try {
+    const product = issue.target === 'product' ? (await api(`/api/admin/products/${Number(issue.id)}`)).data : null
+    if (state.issueDetail !== issue) return
+    state.issuePreview = { issue, product, missingPaths: new Set(issue.missing.map(entry => entry.path)), color: '', screen: 'product', realCategory: '全部' }
+    if (product) {
+      state.issuePreview.screenPaths = issueScreenPaths(product, issue)
+      // Open on the first colour whose pictures are missing, else on the first colour.
+      state.issuePreview.color = (product.colors || []).find(color => issueColorGallery(product, color).paths.some(issueIsMissing)) || product.colors?.[0] || ''
+    }
+    const preview = product ? '' : `<section class="mp-page">${await issueStorePreview(issue)}</section>`
+    if (state.issueDetail !== issue) return
+    $('#issueDetailBody').innerHTML = `<div class="issue-preview-layout">
+      <div class="issue-phone-column">
+        ${product ? '<div class="issue-screen-tabs" id="issueScreenTabs"></div>' : ''}
+        <div class="issue-phone" id="issuePhone">${preview}</div>
+      </div>
+      ${issueMissingPanel(issue)}
+    </div>`
+    if (product) renderIssuePhone()
+  } catch (error) {
+    if (state.issueDetail === issue) $('#issueDetailBody').innerHTML = `<p class="issue-detail-loading">读取失败：${escapeHtml(error.message)}</p>`
+  }
+  updateIssueDetailActions()
+}
+
+function closeIssueDetail() {
+  state.issueDetail = null
+  state.issuePreview = null
+  $('#issueDetailModal').classList.add('is-hidden')
+  $('#issueDetailBackdrop').classList.add('is-hidden')
+}
+
+function selectedIssuePaths() {
+  return state.issueDetail ? state.issueDetail.missing.map(entry => entry.path).filter((path, index, list) => state.issueSelection.has(path) && list.indexOf(path) === index) : []
+}
+
+function updateIssueDetailActions() {
+  const count = selectedIssuePaths().length
+  $('#issueDetailRemove').textContent = count ? `删除选中的 ${count} 张丢失图片` : '删除选中的丢失图片'
+  $('#issueDetailRemove').disabled = !count
+}
+
+// The colour whose swiper shows `path`, preferring the current colour.
+function issueColorShowing(product, path, current) {
+  const shows = color => issueColorGallery(product, color).paths.includes(path)
+  if (path === product.posterImage || shows(current)) return current
+  return (product.colors || []).find(shows) ?? current
+}
+
+// Scrolls the phone and then the window around it so the picture ends up in the middle.
+function revealIssueTarget(target) {
+  const offsetToCenter = (container, rect) => rect.top - container.getBoundingClientRect().top - Math.max(0, (container.clientHeight - rect.height) / 2)
+  const scroller = target.closest('.mp-scroll')
+  if (scroller) scroller.scrollTop += offsetToCenter(scroller, target.getBoundingClientRect())
+  const body = $('#issueDetailBody')
+  const rect = target.getBoundingClientRect()
+  const bodyRect = body.getBoundingClientRect()
+  if (rect.top < bodyRect.top || rect.bottom > bodyRect.bottom) body.scrollTop += offsetToCenter(body, rect)
+}
+
+// Opens the screen (and colour or photo tab) where the picture sits, then scrolls to it.
+function locateIssuePicture(anchor) {
+  const preview = state.issuePreview
+  if (!preview) return
+  const [field, , ...rest] = anchor.split('|')
+  const path = rest.join('|')
+  const find = () => {
+    const slots = [...document.querySelectorAll('#issuePhone [data-issue-anchor]')]
+    return slots.find(element => element.dataset.issueAnchor === anchor) || slots.find(element => element.dataset.issuePath === path)
+  }
+  let target = null
+  if (preview.product) {
+    const screens = (issueScreenOrder[field] || Object.keys(issueScreens)).filter(key => (preview.screenPaths[key] || []).includes(path))
+    for (const screen of screens) {
+      preview.screen = screen
+      if (screen === 'product') preview.color = issueColorShowing(preview.product, path, preview.color)
+      if (screen === 'real') preview.realCategory = '全部'
+      renderIssuePhone()
+      target = find()
+      if (target) break
+    }
+  } else target = find()
+  if (!target) return
+  const track = target.closest('[data-issue-gallery]')
+  if (track) {
+    track.scrollLeft = target.closest('.mp-slide').offsetLeft
+    syncIssueGallery(track)
+  }
+  revealIssueTarget(target)
+  // Pictures above it move it down as they load (their height is unknown until then),
+  // so load them now and jump again once they have.
+  const above = [...(target.closest('.mp-scroll')?.querySelectorAll('img') || [])]
+    .filter(img => !img.complete && target.compareDocumentPosition(img) & Node.DOCUMENT_POSITION_PRECEDING)
+  if (above.length) {
+    above.forEach(img => { img.loading = 'eager' })
+    const loaded = above.map(img => new Promise(resolve => { img.addEventListener('load', resolve, { once: true }); img.addEventListener('error', resolve, { once: true }) }))
+    Promise.race([Promise.all(loaded), new Promise(resolve => setTimeout(resolve, 4000))]).then(() => {
+      if (target.isConnected) revealIssueTarget(target)
+    })
+  }
+  target.classList.remove('is-flash')
+  void target.offsetWidth
+  target.classList.add('is-flash')
+}
+
+$('#issueDetailBody').addEventListener('change', event => {
+  const input = event.target.closest('[data-issue-missing-path]')
+  if (!input) return
+  const path = input.dataset.issueMissingPath
+  if (input.checked) state.issueSelection.add(path)
+  else state.issueSelection.delete(path)
+  // The same file can appear in several places; keep all of its boxes in step.
+  document.querySelectorAll('#issueDetailBody [data-issue-missing-path]').forEach(other => {
+    if (other.dataset.issueMissingPath === path) other.checked = input.checked
+  })
+  updateIssueDetailActions()
+})
+$('#issueDetailBody').addEventListener('click', event => {
+  const preview = state.issuePreview
+  const locate = event.target.closest('[data-issue-locate]')
+  if (locate) {
+    locateIssuePicture(locate.dataset.issueLocate)
+    return
+  }
+  // Ticking a missing picture's box must not also act as a tap on the card around it.
+  if (!preview?.product || event.target.closest('.mp-missing')) return
+  const colorButton = event.target.closest('[data-issue-color]')
+  if (colorButton) {
+    preview.color = colorButton.dataset.issueColor
+    renderIssuePhone()
+    // Like the mini program, picking a colour shows that colour's first picture.
+    const track = $('#issuePhone [data-issue-gallery]')
+    const slide = track?.querySelector('.mp-slide[data-poster="0"]')
+    if (slide) {
+      track.scrollLeft = slide.offsetLeft
+      syncIssueGallery(track)
+    }
+    return
+  }
+  const screenButton = event.target.closest('[data-issue-screen]')
+  if (screenButton) {
+    preview.screen = screenButton.dataset.issueScreen
+    renderIssuePhone()
+    return
+  }
+  const photoTab = event.target.closest('[data-issue-real-category]')
+  if (photoTab) {
+    preview.realCategory = photoTab.dataset.issueRealCategory
+    renderIssuePhone()
+  }
+})
+$('#issueDetailBody').addEventListener('scroll', event => {
+  if (event.target instanceof Element && event.target.matches('[data-issue-gallery]')) syncIssueGallery(event.target)
+}, true)
+$('#issueDetailClose').addEventListener('click', closeIssueDetail)
+$('#issueDetailBackdrop').addEventListener('click', closeIssueDetail)
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && state.issueDetail) closeIssueDetail()
+})
+$('#issueDetailFix').addEventListener('click', () => {
+  const issue = state.issueDetail
+  if (!issue) return
+  closeIssueDetail()
+  if (issue.target === 'product') openProductEditor(issue.id)
+  else location.hash = issue.target === 'category' ? '#categories' : '#settings'
+})
+$('#issueDetailRemove').addEventListener('click', async () => {
+  const issue = state.issueDetail
+  const paths = selectedIssuePaths()
+  if (!issue || !paths.length) return
+  const places = issue.missing.filter(entry => paths.includes(entry.path)).map(entry => `· ${issueLocation(entry)}`)
+  if (!confirm(`确定从「${issueTitle(issue)}」删除选中的 ${paths.length} 张丢失图片吗？\n\n${places.slice(0, 12).join('\n')}${places.length > 12 ? `\n…等 ${places.length} 处` : ''}\n\n其他图片不受影响；没有勾选的会继续保留在待处理问题中。`)) return
+  $('#issueDetailRemove').disabled = true
+  try {
+    const { data } = await api('/api/admin/issues/remove-missing', { method: 'POST', body: JSON.stringify({ target: issue.target, id: issue.id, images: paths }) })
+    toast(data.removed ? `已删除 ${data.removed} 张丢失的图片` : '这些图片已经处理过了')
+    await loadIssues()
+    loadProducts()
+    const remaining = state.issues.find(item => item.target === issue.target && item.id === issue.id)
+    // What is left are the pictures the admin chose to keep, so nothing is pre-selected.
+    if (remaining) openIssueDetail(remaining, { selectAll: false })
+    else closeIssueDetail()
+  } catch (error) {
+    toast(error.message)
+    updateIssueDetailActions()
+  }
 })
 $('#issuesRefreshButton').addEventListener('click', () => loadIssues({ announce: true }))
 

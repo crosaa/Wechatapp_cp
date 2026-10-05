@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>普润制衣团购仓 · 商品管理</title>
   <link rel="icon" type="image/png" sizes="64x64" href="/images/purun-favicon.png?v=20260724-logo1" />
-  <link rel="stylesheet" href="/admin/styles.css?v=20261005-save-conflict1" />
+  <link rel="stylesheet" href="/admin/styles.css?v=20261005-product-preview1" />
 </head>
 <body>
   <section class="login-screen" id="loginScreen">
@@ -92,7 +92,7 @@
           <div>
             <p class="eyebrow">PENDING ISSUES</p>
             <h2>待处理问题</h2>
-            <p>系统会自动检查商品、分类和首页设置里用到的图片。下列图片文件在服务器上已经不存在，小程序会暂时跳过它们。请点击“去修复”，在编辑框里删除标红的图片并重新上传，保存后该问题会自动从列表中消失。</p>
+            <p>系统会自动检查商品、分类和首页设置里用到的图片。下列图片文件在服务器上已经不存在，小程序不会显示它们。点击“查看详情”可以看到每张丢失图片的具体位置，再决定重新上传还是删除；处理后该问题会自动从列表中消失。</p>
           </div>
           <button type="button" class="secondary-button" id="issuesRefreshButton">重新检查</button>
         </div>
@@ -471,6 +471,21 @@
   </aside>
 
   <div class="unmatched-report-backdrop is-hidden" id="unmatchedReportBackdrop"></div>
+  <div class="issue-detail-backdrop is-hidden" id="issueDetailBackdrop"></div>
+  <section class="issue-detail-modal is-hidden" id="issueDetailModal" role="dialog" aria-modal="true" aria-labelledby="issueDetailTitle">
+    <header class="issue-detail-head">
+      <div><p class="eyebrow">ISSUE DETAIL</p><h2 id="issueDetailTitle">问题详情</h2><p id="issueDetailSummary"></p></div>
+      <button type="button" class="icon-button" id="issueDetailClose" aria-label="关闭">×</button>
+    </header>
+    <div class="issue-detail-body" id="issueDetailBody"></div>
+    <footer class="issue-detail-footer">
+      <p id="issueDetailHint">左侧按小程序里的真实页面展示这个商品，可以像在手机上一样点进商品详情、实拍图；红框是服务器上已丢失的图片。还需要的请去重新上传；不需要的勾选后删除，未勾选的会保留在待处理问题中。</p>
+      <div class="issue-detail-actions">
+        <button type="button" class="secondary-button" id="issueDetailFix">去编辑器重新上传</button>
+        <button type="button" class="secondary-button danger" id="issueDetailRemove">删除选中的丢失图片</button>
+      </div>
+    </footer>
+  </section>
   <section class="unmatched-report-modal is-hidden" id="unmatchedReportModal" aria-label="未匹配产品明细">
     <header class="unmatched-report-head">
       <div><p class="eyebrow">UNMATCHED INVENTORY</p><h2>未匹配产品明细</h2><p id="unmatchedReportMeta">正在读取最近一次导入结果…</p></div>
@@ -513,6 +528,6 @@
     <p id="operationProgressDetail">正在准备文件…</p>
   </section>
   <div class="toast" id="toast" role="status"></div>
-  <script type="module" src="/admin/app.js?v=20261005-save-conflict1"></script>
+  <script type="module" src="/admin/app.js?v=20261005-product-preview1"></script>
 </body>
 </html>
