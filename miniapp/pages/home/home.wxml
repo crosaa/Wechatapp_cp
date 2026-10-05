@@ -1,15 +1,9 @@
-<view class="page-navigation" style="padding-top: {{pageNavigation.statusBarHeight}}rpx;">
-  <view class="page-navigation__bar" style="height: {{pageNavigation.navigationBarHeight}}rpx;">
-    <text class="page-navigation__title">首页</text>
+<view class="home-header">
+  <view class="page-navigation" style="padding-top: {{pageNavigation.statusBarHeight}}rpx;">
+    <view class="page-navigation__bar" style="height: {{pageNavigation.navigationBarHeight}}rpx;">
+      <text class="page-navigation__title">首页</text>
+    </view>
   </view>
-</view>
-<view class="home-first-frame" wx:if="{{!homeReady}}">
-  <view class="home-first-brand"></view>
-  <view class="home-first-search"></view>
-  <view class="home-first-hero"></view>
-  <view class="home-first-grid"></view>
-</view>
-<view class="page home-page">
   <view class="home-top">
     <view class="eyebrow">{{settings.homeEyebrow}}</view>
     <view class="brand-row">
@@ -30,7 +24,14 @@
       <text class="search-action">搜索</text>
     </view>
   </view>
-
+</view>
+<view class="home-first-frame" wx:if="{{!homeReady}}">
+  <view class="home-first-brand"></view>
+  <view class="home-first-search"></view>
+  <view class="home-first-hero"></view>
+  <view class="home-first-grid"></view>
+</view>
+<view class="page home-page">
   <view class="hero-wrap">
     <swiper class="hero-swiper" autoplay="{{heroAutoplay && heroSlides.length > 1}}" interval="4500" duration="500" circular="{{heroSlides.length > 1}}" bindchange="onHeroChange">
       <swiper-item wx:for="{{heroSlides}}" wx:key="url">
