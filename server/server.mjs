@@ -218,8 +218,11 @@ function uploadMissing(value) {
 }
 
 function withoutMissingImages(product) {
+  return filterProductImages(product, value => !uploadMissing(value))
+}
+
+function filterProductImages(product, keep) {
   if (!product) return product
-  const keep = value => !uploadMissing(value)
   const colorGalleries = Object.fromEntries(Object.entries(product.colorGalleries || {})
     .map(([color, gallery]) => [color, (gallery || []).filter(keep)]))
   return {
@@ -258,30 +261,44 @@ function missingImageIssues() {
     if (!fileExists.has(uploadPath)) fileExists.set(uploadPath, Boolean(localUploadPath(uploadPath)))
     return !fileExists.get(uploadPath)
   }
-  const describe = groups => groups
-    .map(([label, values]) => ({ label, count: [...new Set(values)].filter(isMissing).length }))
-    .filter(group => group.count > 0)
+  // Each missing picture with where it is used, so the detail view can show it in place.
+  const findMissing = (field, group, values, extra = () => ({})) => {
+    const seen = new Set()
+    return values.flatMap((value, index) => {
+      if (!value || seen.has(value)) return []
+      seen.add(value)
+      return isMissing(value) ? [{ field, group, path: value, position: index + 1, ...extra(index) }] : []
+    })
+  }
+  const summarize = missing => missing.reduce((problems, entry) => {
+    const problem = problems.find(item => item.label === entry.group)
+    if (problem) problem.count += 1
+    else problems.push({ label: entry.group, count: 1 })
+    return problems
+  }, [])
   const issues = []
   for (const product of listProducts()) {
-    const problems = describe([
-      ['海报', [product.posterImage]],
-      ['商品主图', product.images || []],
-      ['颜色图', Object.values(product.colorGalleries || {}).flat()],
-      ['详情图', product.detailImages || []],
-      ['实拍图', (product.realImages || []).map(item => item?.url)]
-    ])
-    if (problems.length) issues.push({ target: 'product', id: product.id, code: product.code, name: product.name, status: product.status, problems })
+    const missing = [
+      ...findMissing('posterImage', '海报', [product.posterImage]),
+      ...findMissing('images', '商品主图', product.images || []),
+      ...Object.entries(product.colorGalleries || {}).flatMap(([color, gallery]) => findMissing('colorGalleries', '颜色图', gallery || [], () => ({ color }))),
+      ...findMissing('detailImages', '详情图', product.detailImages || []),
+      ...findMissing('realImages', '实拍图', (product.realImages || []).map(item => item?.url), index => ({ category: product.realImages[index]?.category || '' }))
+    ]
+    if (missing.length) issues.push({ target: 'product', id: product.id, code: product.code, name: product.name, status: product.status, problems: summarize(missing), missing })
   }
   for (const category of listCategories()) {
-    const problems = describe([['分类图片', [category.image]]])
-    if (problems.length) issues.push({ target: 'category', id: category.id, name: category.name, problems })
+    const missing = findMissing('image', '分类图片', [category.image])
+    if (missing.length) issues.push({ target: 'category', id: category.id, name: category.name, problems: summarize(missing), missing })
   }
   const settings = getStoreSettings()
-  const settingsProblems = describe([
-    ['首页轮播图', [...(settings.homeHeroImages || []), settings.homeHeroImage]],
-    ['店铺图标', [settings.storeIcon]]
-  ])
-  if (settingsProblems.length) issues.push({ target: 'settings', name: '首页轮播与店铺图标', problems: settingsProblems })
+  const heroImages = settings.homeHeroImages || []
+  const settingsMissing = [
+    ...findMissing('homeHeroImages', '首页轮播图', heroImages),
+    ...(heroImages.includes(settings.homeHeroImage) ? [] : findMissing('homeHeroImage', '首页轮播图', [settings.homeHeroImage])),
+    ...findMissing('storeIcon', '店铺图标', [settings.storeIcon])
+  ]
+  if (settingsMissing.length) issues.push({ target: 'settings', name: '首页轮播与店铺图标', problems: summarize(settingsMissing), missing: settingsMissing })
   imageIssueCache = { version, checkedAt: Date.now(), issues }
   return imageIssueCache
 }
@@ -1589,6 +1606,57 @@ async function handleApi(req, res, url) {
   if (url.pathname === '/api/admin/issues' && req.method === 'GET') {
     const { checkedAt, issues } = missingImageIssues()
     json(res, 200, { data: { checkedAt: new Date(checkedAt).toISOString(), issues } })
+    return true
+  }
+
+  // Detail view of 待处理问题: remove the missing pictures the admin selected after
+  // reviewing them. Only references whose files are missing (checked again now) can
+  // be removed here; every other picture stays untouched.
+  if (url.pathname === '/api/admin/issues/remove-missing' && req.method === 'POST') {
+    const { target, id, images } = await readJson(req)
+    const selected = Array.isArray(images) ? new Set(images.map(String)) : null
+    const removable = value => Boolean(value) && uploadMissing(value) && (!selected || selected.has(value))
+    const keep = value => !removable(value)
+    // Counted per field, like the 待处理问题 list ("商品主图 1 张、详情图 1 张").
+    const removableCount = (...fields) => fields.reduce((total, values) => total + new Set(values.filter(removable)).size, 0)
+    let removed = 0
+    if (target === 'product') {
+      const previous = getProduct(id)
+      if (!previous) {
+        json(res, 404, { error: '商品不存在或已删除' })
+        return true
+      }
+      removed = removableCount([previous.posterImage], previous.images || [], ...Object.values(previous.colorGalleries || {}), previous.detailImages || [], (previous.realImages || []).map(item => item?.url))
+      if (removed) {
+        const { images: productImages, posterImage, colorGalleries, detailImages, realImages } = filterProductImages(previous, keep)
+        updateProduct(id, { images: productImages, posterImage, colorGalleries, detailImages, realImages })
+        scheduleVisualImageIndexRefresh()
+      }
+    } else if (target === 'category') {
+      const previous = listCategories().find(category => category.id === Number(id))
+      if (!previous) {
+        json(res, 404, { error: '分类不存在或已删除' })
+        return true
+      }
+      removed = removableCount([previous.image])
+      if (removed) updateCategory(id, { image: '' })
+    } else if (target === 'settings') {
+      const current = getStoreSettings()
+      removed = removableCount([...(current.homeHeroImages || []), current.homeHeroImage], [current.storeIcon])
+      if (removed) {
+        const homeHeroImages = (current.homeHeroImages || []).filter(keep)
+        updateStoreSettings({
+          homeHeroImages,
+          homeHeroImage: homeHeroImages[0] || (keep(current.homeHeroImage) ? current.homeHeroImage : ''),
+          storeIcon: keep(current.storeIcon) ? current.storeIcon : ''
+        })
+      }
+    } else {
+      json(res, 400, { error: '无法识别要处理的问题' })
+      return true
+    }
+    if (removed) markPublicDataChanged()
+    json(res, 200, { data: { removed } })
     return true
   }
 

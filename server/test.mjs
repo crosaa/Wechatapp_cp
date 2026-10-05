@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, unlinkSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -553,24 +553,61 @@ try {
   const issuesBefore = await request('/api/admin/issues', {}, cookie)
   assert.equal(issuesBefore.response.status, 200)
   assert.ok(!issuesBefore.body.data.issues.some(issue => issue.id === issueProductId))
-  unlinkSync(join(workspace, 'uploads', issueUpload.body.url.slice('/uploads/'.length)))
-  await request(`/api/admin/products/${issueProductId}`, { method: 'PUT', body: JSON.stringify({ name: '图片丢失测试商品（已编辑）', status: 'published' }) }, cookie)
+  // Simulate a lost file by pointing the product at an upload that does not exist
+  // (deleting a just-processed file is unreliable on Windows while sharp holds it).
+  const lostMain = '/uploads/missing-product-image.png'
+  const lostDetail = '/uploads/missing-detail-image.png'
+  await request(`/api/admin/products/${issueProductId}`, { method: 'PUT', body: JSON.stringify({ name: '图片丢失测试商品（已编辑）', status: 'published', images: [lostMain], detailImages: [issueUpload.body.url, lostDetail] }) }, cookie)
   const issuesAfterLoss = await request('/api/admin/issues', {}, cookie)
   const lostImageIssue = issuesAfterLoss.body.data.issues.find(issue => issue.id === issueProductId)
   assert.equal(lostImageIssue?.target, 'product')
   assert.deepEqual(lostImageIssue.problems, [{ label: '商品主图', count: 1 }, { label: '详情图', count: 1 }])
-  // The mini program APIs leave the missing file out; the admin still sees it.
+  assert.deepEqual(lostImageIssue.missing.map(({ field, path, position }) => [field, path, position]), [['images', lostMain, 1], ['detailImages', lostDetail, 2]])
+  // The mini program APIs leave the missing files out; the admin still sees them.
   const publicLostProduct = await request(`/api/products/${issueProductId}`)
   assert.equal(publicLostProduct.response.status, 200)
   assert.deepEqual(publicLostProduct.body.data.images, [])
-  assert.deepEqual(publicLostProduct.body.data.detailImages, [])
+  assert.deepEqual(publicLostProduct.body.data.detailImages, [issueUpload.body.url])
   const lostSummary = (await request('/api/catalog-content')).body.data.products.find(product => product.id === issueProductId)
   assert.equal(lostSummary.image, '')
   assert.equal(lostSummary.previewImage, '')
-  assert.deepEqual((await request(`/api/admin/products/${issueProductId}`, {}, cookie)).body.data.images, [issueUpload.body.url])
-  await request(`/api/admin/products/${issueProductId}`, { method: 'PUT', body: JSON.stringify({ images: [], detailImages: [] }) }, cookie)
+  assert.deepEqual((await request(`/api/admin/products/${issueProductId}`, {}, cookie)).body.data.images, [lostMain])
+  // After reviewing the details the admin removes only the selected missing pictures;
+  // pictures whose files exist can never be removed this way.
+  const removeMissing = body => request('/api/admin/issues/remove-missing', { method: 'POST', body: JSON.stringify(body) }, cookie)
+  assert.equal((await request('/api/admin/issues/remove-missing', { method: 'POST', body: JSON.stringify({ target: 'product', id: issueProductId }) })).response.status, 401)
+  assert.equal((await removeMissing({ target: 'unknown', id: issueProductId })).response.status, 400)
+  assert.equal((await removeMissing({ target: 'product', id: 99999999 })).response.status, 404)
+  const removedSelected = await removeMissing({ target: 'product', id: issueProductId, images: [lostDetail, issueUpload.body.url] })
+  assert.equal(removedSelected.response.status, 200)
+  assert.equal(removedSelected.body.data.removed, 1)
+  const afterPartialRemoval = await request(`/api/admin/products/${issueProductId}`, {}, cookie)
+  assert.deepEqual(afterPartialRemoval.body.data.images, [lostMain])
+  assert.deepEqual(afterPartialRemoval.body.data.detailImages, [issueUpload.body.url])
+  assert.equal(afterPartialRemoval.body.data.name, '图片丢失测试商品（已编辑）')
+  const stillListed = (await request('/api/admin/issues', {}, cookie)).body.data.issues.find(issue => issue.id === issueProductId)
+  assert.deepEqual(stillListed?.problems, [{ label: '商品主图', count: 1 }])
+  assert.equal((await removeMissing({ target: 'product', id: issueProductId, images: [lostMain] })).body.data.removed, 1)
+  assert.deepEqual((await request(`/api/admin/products/${issueProductId}`, {}, cookie)).body.data.images, [])
+  assert.equal((await removeMissing({ target: 'product', id: issueProductId })).body.data.removed, 0)
   const issuesAfterFix = await request('/api/admin/issues', {}, cookie)
   assert.ok(!issuesAfterFix.body.data.issues.some(issue => issue.id === issueProductId))
+  const issueCategory = (await request('/api/admin/categories', {}, cookie)).body.data.find(category => category.name !== '测试分类')
+  await request(`/api/admin/categories/${issueCategory.id}`, { method: 'PUT', body: JSON.stringify({ name: issueCategory.name, image: '/uploads/missing-category-image.png' }) }, cookie)
+  const removedCategoryImage = await removeMissing({ target: 'category', id: issueCategory.id })
+  assert.equal(removedCategoryImage.body.data.removed, 1)
+  const categoryAfterRemoval = (await request('/api/admin/categories', {}, cookie)).body.data.find(category => category.id === issueCategory.id)
+  assert.equal(categoryAfterRemoval.image, '')
+  assert.equal(categoryAfterRemoval.name, issueCategory.name)
+  await request(`/api/admin/categories/${issueCategory.id}`, { method: 'PUT', body: JSON.stringify({ name: issueCategory.name, image: issueCategory.image || '' }) }, cookie)
+  const settingsBeforeIssue = (await request('/api/admin/store-settings', {}, cookie)).body.data
+  await request('/api/admin/store-settings', { method: 'PUT', body: JSON.stringify({ storeIcon: '/uploads/missing-store-icon.png' }) }, cookie)
+  const removedSettingsImage = await removeMissing({ target: 'settings' })
+  assert.equal(removedSettingsImage.body.data.removed, 1)
+  const settingsAfterIssue = (await request('/api/admin/store-settings', {}, cookie)).body.data
+  assert.equal(settingsAfterIssue.storeIcon, '')
+  assert.deepEqual(settingsAfterIssue.homeHeroImages, settingsBeforeIssue.homeHeroImages)
+  await request('/api/admin/store-settings', { method: 'PUT', body: JSON.stringify({ storeIcon: settingsBeforeIssue.storeIcon || '' }) }, cookie)
   assert.equal((await request(`/api/admin/products/${issueProductId}`, { method: 'DELETE' }, cookie)).response.status, 200)
 
   // Two editors open on one product: the first save wins and the stale one is rejected
