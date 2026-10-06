@@ -186,6 +186,14 @@ function refreshDataVersion(force = false) {
   return versionRequest
 }
 
+// Pull-down refresh: asks the server right away and fails when it cannot be reached,
+// so the page can say so instead of presenting cached data as refreshed.
+function checkDataVersionNow() {
+  lastVersionCheckAt = Date.now()
+  return request('/api/data-version', {}, { enableCache: false, timeout: 5000 })
+    .then(result => acceptDataVersion(result?.data?.version))
+}
+
 function absoluteImage(path) {
   if (!path) return '/assets/polo-grid.jpg'
   if (/^https?:\/\//.test(path) || path.startsWith('/assets/')) return path
@@ -516,4 +524,4 @@ async function recognizeProductImage(dataUrl, limit = 12) {
   return result.data || []
 }
 
-module.exports = { fetchProducts, fetchProductSummaries, fetchProduct, fetchCategories, fetchStoreSettings, fetchHomeContent, fetchCatalogContent, readHomeSnapshot, readCatalogSnapshot, readProductSnapshot, recognizeProductImage, refreshDataVersion, dataVersion, clearPublicDataCache, hydrateProduct, hydrateProductSummary, hydrateStoreSettings, thumbnailImage, defaultStoreSettings }
+module.exports = { fetchProducts, fetchProductSummaries, fetchProduct, fetchCategories, fetchStoreSettings, fetchHomeContent, fetchCatalogContent, readHomeSnapshot, readCatalogSnapshot, readProductSnapshot, recognizeProductImage, refreshDataVersion, checkDataVersionNow, dataVersion, clearPublicDataCache, hydrateProduct, hydrateProductSummary, hydrateStoreSettings, thumbnailImage, defaultStoreSettings }

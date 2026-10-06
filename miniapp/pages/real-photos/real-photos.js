@@ -1,6 +1,7 @@
-const { fetchProduct, readProductSnapshot, refreshDataVersion, thumbnailImage } = require('../../common/api')
+const { fetchProduct, readProductSnapshot, refreshDataVersion, dataVersion, thumbnailImage } = require('../../common/api')
 const { firstImage, appShare, timelineShare, favoriteShare, productTitle, productQuery } = require('../../common/share')
 const { saveOriginalImage } = require('../../common/image')
+const { refreshFromServer } = require('../../common/pull-refresh')
 
 const PHOTO_BATCH_SIZE = 8
 const PREVIEW_IMAGE_SIZE = 2000
@@ -31,7 +32,8 @@ Page({
   data: {
     pageNavigation: getApp().globalData.pageNavigation,
     pageReady: false,
-    ...galleryState({ id: 0, name: '', realImages: [] })
+    ...galleryState({ id: 0, name: '', realImages: [] }),
+    refreshing: false
   },
   goBack() {
     if (getCurrentPages().length > 1) {
@@ -49,6 +51,7 @@ Page({
     const cachedProduct = readProductSnapshot(this.productId)
     if (cachedProduct) {
       this.sourceProduct = cachedProduct
+      this.renderedVersion = dataVersion()
       this.applyGallery(cachedProduct)
       this.refreshProduct()
     } else {
@@ -66,13 +69,24 @@ Page({
       console.info('实拍图同步检查失败', error.errMsg || error.message)
     }
   },
-  async loadProduct(id, selected = '全部') {
+  onRefresh() {
+    refreshFromServer(this, async () => {
+      // Unchanged since it was shown: skip the re-render, which on a page with this many
+      // pictures made the refresh animation stutter.
+      if (dataVersion() !== this.renderedVersion) await this.loadProduct(this.productId, this.data.selected, { rethrow: true })
+    })
+  },
+  async loadProduct(id, selected = '全部', { rethrow = false } = {}) {
     try {
       this.sourceProduct = await fetchProduct(id)
+      this.renderedVersion = dataVersion()
       const categories = ['全部', ...new Set((this.sourceProduct.realImages || []).map(item => item.category || '实物展示'))]
       this.applyGallery(this.sourceProduct, categories.includes(selected) ? selected : '全部')
     }
-    catch (error) { console.info('商品服务未启动，实拍图继续使用本地演示数据', error.errMsg || error.message) }
+    catch (error) {
+      if (rethrow) throw error
+      console.info('商品服务未启动，实拍图继续使用本地演示数据', error.errMsg || error.message)
+    }
   },
   selectCategory(event) {
     if (!this.sourceProduct) return
@@ -82,7 +96,7 @@ Page({
     this.allDisplayImages = galleryImages(product, selected)
     this.setData({ pageReady: true, ...galleryState(product, selected, this.allDisplayImages) })
   },
-  onReachBottom() {
+  loadMorePhotos() {
     const visible = this.data.displayImages || []
     if (visible.length >= (this.allDisplayImages || []).length) return
     this.setData({

@@ -1,6 +1,7 @@
-const { fetchProduct, readProductSnapshot, refreshDataVersion, thumbnailImage } = require('../../common/api')
+const { fetchProduct, readProductSnapshot, refreshDataVersion, dataVersion, thumbnailImage } = require('../../common/api')
 const { firstImage, appShare, timelineShare, favoriteShare, productTitle, productQuery } = require('../../common/share')
 const { saveOriginalImage } = require('../../common/image')
+const { refreshFromServer } = require('../../common/pull-refresh')
 
 const DETAIL_BATCH_SIZE = 6
 const PREVIEW_IMAGE_SIZE = 2000
@@ -40,7 +41,8 @@ Page({
   data: {
     pageNavigation: getApp().globalData.pageNavigation,
     pageReady: false,
-    product: detailState({ colors: [], detailImages: [] })
+    product: detailState({ colors: [], detailImages: [] }),
+    refreshing: false
   },
   goBack() {
     if (getCurrentPages().length > 1) {
@@ -73,15 +75,23 @@ Page({
       console.info('商品详情同步检查失败', error.errMsg || error.message)
     }
   },
+  onRefresh() {
+    refreshFromServer(this, async () => {
+      // Unchanged since it was shown: skip the re-render, which on a page with this many
+      // pictures made the refresh animation stutter.
+      if (dataVersion() !== this.renderedVersion) this.applyProduct(await fetchProduct(this.productId))
+    })
+  },
   async loadProduct(id) {
     try { this.applyProduct(await fetchProduct(id)) }
     catch (error) { console.info('商品服务未启动，详情页继续使用本地演示数据', error.errMsg || error.message) }
   },
   applyProduct(product) {
+    this.renderedVersion = dataVersion()
     this.allDetailSlides = buildDetailSlides(product)
     this.setData({ pageReady: true, product: detailState(product, this.allDetailSlides) })
   },
-  onReachBottom() {
+  loadMoreSlides() {
     const visible = this.data.product.detailSlides || []
     if (visible.length >= (this.allDetailSlides || []).length) return
     this.setData({

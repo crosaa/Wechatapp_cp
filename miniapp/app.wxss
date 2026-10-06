@@ -12,6 +12,14 @@ view, text, image, button, input, scroll-view, swiper, swiper-item {
 button::after { border: 0; }
 
 .page { min-height: 100vh; }
+/* Pages whose navigation bar must not move: the content scrolls (and is pulled down to
+   refresh) in a scroll-view below the bar. */
+.page-shell { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+.page-scroll { flex: 1; height: 0; }
+/* The refresher moves the content with a transform on every touch move. On its own layer
+   the content is just moved instead of repainted each frame (pages with many large
+   pictures stuttered while being pulled). */
+.page-scroll .page { min-height: 0; will-change: transform; }
 .surface { background: #ffffff; }
 .muted { color: #8d8b84; }
 .accent { color: #d99a21; }

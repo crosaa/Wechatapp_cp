@@ -1,6 +1,7 @@
-const { fetchProduct, fetchStoreSettings, readProductSnapshot, refreshDataVersion, thumbnailImage, defaultStoreSettings } = require('../../common/api')
+const { fetchProduct, fetchStoreSettings, readProductSnapshot, refreshDataVersion, dataVersion, thumbnailImage, defaultStoreSettings } = require('../../common/api')
 const { firstImage, appShare, timelineShare, favoriteShare, productTitle, productQuery } = require('../../common/share')
 const { saveOriginalImage } = require('../../common/image')
+const { refreshFromServer } = require('../../common/pull-refresh')
 
 const featureIcons = ['◫', '♨', '⌁', '✓', '★', '品', '服', '定']
 const PREVIEW_IMAGE_SIZE = 2000
@@ -188,7 +189,8 @@ Page({
     specialPriceActive: false,
     productReady: false,
     loadError: false,
-    featureItems: featureItems(defaultStoreSettings.productFeatures)
+    featureItems: featureItems(defaultStoreSettings.productFeatures),
+    refreshing: false
   },
   goBack() {
     if (getCurrentPages().length > 1) {
@@ -235,10 +237,25 @@ Page({
       console.info('商品详情同步检查失败', error.errMsg || error.message)
     }
   },
-  applyProduct(source, productReady) {
+  onRefresh() {
+    refreshFromServer(this, async () => {
+      // Unchanged since it was shown: skip the re-render, which on a page with this many
+      // pictures made the refresh animation stutter.
+      if (!this.currentProductId || dataVersion() === this.renderedVersion) return
+      const [product, settings] = await Promise.all([fetchProduct(this.currentProductId), fetchStoreSettings()])
+      // Pictures that failed to load before get another try.
+      this.brokenGalleryImages = null
+      this.applyProduct(product, true, this.data.selectedColor)
+      this.setData({ featureItems: featureItems(settings.productFeatures) })
+    })
+  },
+  // preferredColor keeps the colour being viewed when the product is reloaded.
+  applyProduct(source, productReady, preferredColor = '') {
     const product = prepareProduct(source)
     if (this.brokenGalleryImages?.has(product.posterImage)) product.posterImage = ''
-    const selectedColor = product.colors[0] || ''
+    const selectedColor = product.colors.includes(preferredColor) ? preferredColor : (product.colors[0] || '')
+    // The data version this page shows (a preview from the list is not the full product).
+    this.renderedVersion = productReady ? dataVersion() : ''
     const selection = selectProductColor(product, selectedColor)
     this.setGallery({
       ...selection,

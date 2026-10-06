@@ -4,8 +4,9 @@
 .home-first-search { height: 76rpx; margin: 18rpx 28rpx; border-radius: 38rpx; background: #ece8df; }
 .home-first-hero { height: 390rpx; background: #e9ddc8; }
 .home-first-grid { height: 390rpx; margin: 22rpx 20rpx; border-radius: 24rpx; background: #fff; }
-/* The navigation bar, brand rows and search box stay pinned while the page scrolls. */
-.home-header { position: sticky; top: 0; z-index: 50; }
+/* The navigation bar, brand rows and search box stay at the top; only the content below
+   scrolls. Above the first-load placeholder (15). */
+.home-header { position: relative; z-index: 50; flex-shrink: 0; }
 .home-top {
   padding: 28rpx 0 12rpx;
   background: linear-gradient(145deg, #fffaf0, #f3e8cf);

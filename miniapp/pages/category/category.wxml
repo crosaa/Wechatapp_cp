@@ -65,7 +65,7 @@
         </view>
       </scroll-view>
 
-      <scroll-view class="product-list {{resultMode ? 'result-mode' : ''}}" scroll-y="true" scroll-into-view="{{productScrollIntoView}}" lower-threshold="160" bindscrolltolower="loadMore">
+      <scroll-view class="product-list {{resultMode ? 'result-mode' : ''}}" scroll-y="true" scroll-into-view="{{productScrollIntoView}}" lower-threshold="160" bindscrolltolower="loadMore" refresher-enabled="{{true}}" refresher-triggered="{{listRefreshing}}" refresher-background="#f2f0eb" bindrefresherrefresh="onListRefresh">
         <view id="product-top-a" class="product-scroll-anchor"></view>
         <view id="product-top-b" class="product-scroll-anchor"></view>
         <view class="result-meta"><text>{{resultTitle}}</text><text>{{resultCount}} 款</text></view>

@@ -1,5 +1,6 @@
 const { fetchProduct, fetchCatalogContent, readCatalogSnapshot, refreshDataVersion, dataVersion, thumbnailImage, defaultStoreSettings } = require('../../common/api')
 const { appName, firstImage, appShare, timelineShare, favoriteShare } = require('../../common/share')
+const { refreshFromServer } = require('../../common/pull-refresh')
 
 const ALL_CATEGORY = { id: 'all', name: '全部商品', type: 'all', icon: 'ALL', tone: '#8b918a' }
 const PAGE_SIZE = 24
@@ -155,7 +156,8 @@ Page({
     hasMore: initialCategory.products.length > PAGE_SIZE,
     productScrollIntoView: 'product-top-a',
     resultMode: initialCategory.resultMode,
-    resultTitle: initialCategory.resultTitle
+    resultTitle: initialCategory.resultTitle,
+    listRefreshing: false
   },
   onLoad(options) {
     this.hasShownOnce = false
@@ -190,7 +192,7 @@ Page({
     if (initialCatalogSnapshot) this.refreshRemoteDataIfChanged()
     else this.loadRemoteProducts()
   },
-  async loadRemoteProducts() {
+  async loadRemoteProducts({ rethrow = false } = {}) {
     try {
       // A refresh of a list the user is already looking at keeps its loaded pages and
       // scroll position; only the first load starts from the top page.
@@ -210,6 +212,7 @@ Page({
         searchPlaceholder: storeSettings.searchPlaceholder
       }, false, null, { keepLoaded: refreshing })
     } catch (error) {
+      if (rethrow) throw error
       console.info('商品服务未启动，分类页继续使用本地演示数据', error.errMsg || error.message)
     }
   },
@@ -271,6 +274,16 @@ Page({
       console.info('分类商品同步检查失败', error.errMsg || error.message)
       return false
     }
+  },
+  // Pull-to-refresh on the product list: the list keeps its category, filters and
+  // scroll position; the catalog is only downloaded again when it changed.
+  onListRefresh() {
+    refreshFromServer(this, async () => {
+      if (this.remoteProductsReady && dataVersion() === this.catalogVersion) return
+      this.warmedProducts.clear()
+      this.productWarmPromises.clear()
+      await this.loadRemoteProducts({ rethrow: true })
+    }, 'listRefreshing')
   },
   openSearch() {
     const keyword = this.data.keyword.trim()

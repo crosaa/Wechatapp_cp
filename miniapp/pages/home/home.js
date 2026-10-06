@@ -1,6 +1,7 @@
 const { fetchHomeContent, readHomeSnapshot, recognizeProductImage, refreshDataVersion, dataVersion, defaultStoreSettings } = require('../../common/api')
 const { appName, appShare, timelineShare, favoriteShare } = require('../../common/share')
 const { setCategoryIntent } = require('../../common/category-intent')
+const { refreshFromServer } = require('../../common/pull-refresh')
 
 const initialHomeSnapshot = readHomeSnapshot()
 const initialHomeVersion = initialHomeSnapshot ? dataVersion() : ''
@@ -21,7 +22,8 @@ Page({
     heroCurrent: 0,
     heroAutoplay: true,
     imageRecognizing: false,
-    categories: initialHomeCategories
+    categories: initialHomeCategories,
+    refreshing: false
   },
   onLoad() {
     this.contentVersion = initialHomeVersion
@@ -60,13 +62,19 @@ Page({
       console.info('首页同步检查失败', error.errMsg || error.message)
     }
   },
-  async loadRemoteContent() {
+  async loadRemoteContent({ rethrow = false } = {}) {
     try {
       this.applyHomeContent(await fetchHomeContent())
       this.contentVersion = dataVersion()
     } catch (error) {
+      if (rethrow) throw error
       console.info('商品服务未启动，首页继续使用本地演示数据', error.errMsg || error.message)
     }
+  },
+  onRefresh() {
+    refreshFromServer(this, async () => {
+      if (dataVersion() !== this.contentVersion) await this.loadRemoteContent({ rethrow: true })
+    })
   },
   applyHomeContent(content = {}) {
     const remoteCategories = Array.isArray(content.categories) ? content.categories : []
