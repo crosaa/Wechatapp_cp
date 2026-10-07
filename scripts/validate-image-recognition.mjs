@@ -1,65 +1,54 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import sharp from 'sharp'
+// Measures how well 拍图识别 finds the right product, using the shop's own pictures and no
+// paid API calls. Each query is an indexed picture's own vector; the picture itself and its
+// near-identical copies are left out so the product has to be found through its other
+// pictures. Three situations:
+//   仓库实拍（有同批照片）  a 实拍图 whose sister shots of the same garment stay in the library
+//   客户自拍（只有商品图）  a 实拍图 with ALL 实拍图 of that product left out, so it must be
+//                          matched to the product's catalog pictures, like a customer's photo
+//   商品图截图              a catalog picture (main or colour) as the query
+// Rankings come from the same function the recognition uses, with and without the
+// similarity correction.
+// Usage: node scripts/validate-image-recognition.mjs [queries per situation, default 300]
 import { listProducts } from '../server/db.mjs'
-import { recognizeProductImage } from '../server/image-recognition.mjs'
+import { indexedPictures, rankProductsForVector } from '../server/visual-embedding.mjs'
 
-const serverDir = resolve(fileURLToPath(new URL('../server', import.meta.url)))
-const uploadsDir = resolve(process.env.UPLOADS_DIR || join(serverDir, 'uploads'))
-const publicDir = join(serverDir, 'public')
-const sampleLimit = Math.max(1, Math.min(100, Number(process.argv[2]) || 24))
+const perSituation = Math.max(10, Math.min(5000, Number(process.argv[2]) || 300))
 const products = listProducts({ status: 'published' })
+const productIds = new Set(products.map(product => Number(product.id)))
+const pictures = indexedPictures().filter(picture => productIds.has(Number(picture.productId)))
+if (!pictures.length) throw new Error('视觉向量索引为空，请先运行 npm run build:visual-index')
 
-function localPath(url) {
-  if (url?.startsWith('/uploads/')) return join(uploadsDir, url.slice('/uploads/'.length))
-  if (url?.startsWith('/images/')) return join(publicDir, 'images', url.slice('/images/'.length))
-  return ''
+const isReal = picture => picture.roles?.includes('real')
+const situations = [
+  { name: '仓库实拍（有同批照片）', isQuery: isReal, leaveOut: () => false },
+  { name: '客户自拍（只有商品图）', isQuery: isReal, leaveOut: isReal },
+  { name: '商品图截图', isQuery: picture => !isReal(picture) && (picture.roles?.includes('main') || picture.roles?.includes('color')), leaveOut: () => false }
+]
+
+// Evenly spread queries, so repeated runs measure the same pictures.
+function spread(list, count) {
+  if (list.length <= count) return list
+  return Array.from({ length: count }, (_, position) => list[Math.floor(position * list.length / count)])
 }
 
-function sampleImage(product) {
-  const real = (product.realImages || []).map(item => typeof item === 'string' ? item : item?.url)
-  const colors = Object.values(product.colorGalleries || {}).flat()
-  return [...real, ...colors, ...(product.images || [])]
-    .map(url => ({ url, path: localPath(url) }))
-    .find(item => item.path && existsSync(item.path))
+const percent = (hits, total) => `${(100 * hits / Math.max(1, total)).toFixed(1)}%`.padStart(6)
+console.log(`商品 ${products.length} 款，已索引图片 ${pictures.length} 张；每种情况最多 ${perSituation} 张查询图`)
+for (const situation of situations) {
+  const results = { corrected: [], plain: [] }
+  for (const query of spread(pictures.filter(situation.isQuery), perSituation)) {
+    const vector = query.vector()
+    const keep = (item, itemIndex, cosine) => itemIndex !== query.itemIndex
+      && !(Number(item.productId) === Number(query.productId) && (cosine > 0.97 || situation.leaveOut(item)))
+    for (const [key, correct] of [['corrected', true], ['plain', false]]) {
+      const ranked = await rankProductsForVector(vector, productIds, { keep, correct })
+      const rank = ranked.findIndex(entry => entry.productId === Number(query.productId)) + 1
+      if (rank) results[key].push(rank)
+    }
+  }
+  console.log(`\n${situation.name}：${results.corrected.length} 张查询图`)
+  for (const [key, label] of [['plain', '未校正'], ['corrected', '校正后（正式使用）']]) {
+    const ranks = results[key]
+    const within = limit => ranks.filter(rank => rank <= limit).length
+    console.log(`  ${label.padEnd(10)} 第一名 ${percent(within(1), ranks.length)}  前3 ${percent(within(3), ranks.length)}  前10 ${percent(within(10), ranks.length)}  前20 ${percent(within(20), ranks.length)}`)
+  }
 }
-
-const candidates = products
-  .map(product => ({ product, image: sampleImage(product) }))
-  .filter(item => item.image)
-const step = Math.max(1, Math.floor(candidates.length / sampleLimit))
-const samples = candidates.filter((_, index) => index % step === 0).slice(0, sampleLimit)
-const results = []
-
-for (const sample of samples) {
-  const transformed = await sharp(readFileSync(sample.image.path), { failOn: 'none' })
-    .rotate(0.8, { background: '#ffffff' })
-    .resize({ width: 720, height: 920, fit: 'inside', withoutEnlargement: false })
-    .modulate({ brightness: 0.96, saturation: 1.04 })
-    .jpeg({ quality: 72 })
-    .toBuffer()
-  const startedAt = performance.now()
-  const matches = await recognizeProductImage(`data:image/jpeg;base64,${transformed.toString('base64')}`, products, 10)
-  const elapsedMs = Math.round(performance.now() - startedAt)
-  const rank = matches.findIndex(item => item.id === sample.product.id) + 1
-  results.push({
-    id: sample.product.id,
-    code: sample.product.code,
-    sourceType: sample.image.url.includes('cpfst-real') ? 'real' : 'catalog',
-    rank,
-    elapsedMs,
-    topCode: matches[0]?.code || '',
-    confidence: matches[0]?.confidence || 0
-  })
-}
-
-const summary = {
-  samples: results.length,
-  top1: results.filter(item => item.rank === 1).length,
-  top5: results.filter(item => item.rank > 0 && item.rank <= 5).length,
-  top10: results.filter(item => item.rank > 0 && item.rank <= 10).length,
-  averageMs: Math.round(results.reduce((sum, item) => sum + item.elapsedMs, 0) / Math.max(1, results.length)),
-  failures: results.filter(item => item.rank !== 1)
-}
-console.log(JSON.stringify(summary, null, 2))

@@ -90,7 +90,7 @@ function markPublicDataChanged() {
 
 function scheduleVisualImageIndexRefresh() {
   setImmediate(() => {
-    ensureVisualImageSearchIndex(listProducts({ status: 'published' }))
+    ensureVisualImageSearchIndex(listProducts({ status: 'published' }).map(withoutMissingImages))
       .catch(error => console.warn(`视觉向量索引后台更新失败：${error.message}`))
   })
 }
@@ -1292,7 +1292,8 @@ async function handleApi(req, res, url) {
     }
     const products = cachedVersionedData(
       'public:recognition-products',
-      () => listProducts({ status: 'published' })
+      // Lost picture files can never get a vector; leaving them in made every request retry the index build.
+      () => listProducts({ status: 'published' }).map(withoutMissingImages)
     )
     const body = await readJson(req, 12 * 1024 * 1024)
     const localMatches = await recognizeProductImage(body.dataUrl, products, body.limit)
@@ -1758,11 +1759,11 @@ server.listen(port, '127.0.0.1', () => {
   console.log(visualEmbedding.configured
     ? `视觉向量检索：${visualEmbedding.model}，${visualEmbedding.dimensions}维，已索引 ${visualEmbedding.indexedImages} 张商品图片`
     : '视觉向量检索：未配置，使用传统本地检索')
-  console.log(reranker.configured ? `商品图片智能复核：${reranker.model}，候选 ${reranker.candidateLimit} 款` : '商品图片智能复核：未配置，使用本地识别')
+  console.log(reranker.configured ? `商品图片智能复核：${reranker.model}，候选 ${reranker.candidateLimit} 款，检索领先 ${reranker.skipLead} 以上时不复核` : '商品图片智能复核：未配置，使用本地识别')
   if (!process.env.ADMIN_PASSWORD) console.log('本地演示账号：admin / admin123（正式部署前必须修改）')
 })
 
-ensureImageSearchIndex(listProducts({ status: 'published' }))
+ensureImageSearchIndex(listProducts({ status: 'published' }).map(withoutMissingImages))
   .then(index => console.log(`拍图识别索引：${index.items.length} 张商品图片`))
   .catch(error => console.warn(`拍图识别索引生成失败：${error.message}`))
 

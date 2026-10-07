@@ -38,7 +38,9 @@ const rerankedMatches = applyImageRerank(
 )
 assert.deepEqual(rerankedMatches.map(match => match.id), [2, 1, 3])
 assert.equal(rerankedMatches[0].aiConfidence, 91)
-assert.equal(rerankedMatches[0].recognitionMethod, 'gemini-reranked')
+assert.equal(rerankedMatches[0].recognitionMethod, 'ai-reranked')
+// Up to 20 candidates (labels A-T); the model may rank only its top few.
+assert.deepEqual(parseImageRerankResponse('{"best":"P","ranking":["P","C","Q"],"confidence":88}', 'ABCDEFGHIJKLMNOPQRST'.split('')).ranking, ['P', 'C', 'Q'])
 const uncertainRerank = parseImageRerankResponse('{"best":"none","uncertain":true,"confidence":42,"ranking":["A","B"]}', ['A', 'B'])
 assert.equal(uncertainRerank.uncertain, true)
 assert.deepEqual(applyImageRerank(
