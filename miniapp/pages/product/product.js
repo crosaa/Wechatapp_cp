@@ -2,8 +2,10 @@ const { fetchProduct, fetchStoreSettings, readProductSnapshot, refreshDataVersio
 const { firstImage, appShare, timelineShare, favoriteShare, productTitle, productQuery } = require('../../common/share')
 const { saveOriginalImage } = require('../../common/image')
 const { refreshFromServer } = require('../../common/pull-refresh')
+const { openTab } = require('../../common/tabs')
+const { preloadNextPageWhenQuiet, noteTouch } = require('../../common/webview-preload')
+const { featureIcon } = require('../../common/icons')
 
-const featureIcons = ['◫', '♨', '⌁', '✓', '★', '品', '服', '定']
 const PREVIEW_IMAGE_SIZE = 2000
 // The first pictures of a gallery all start loading when it is shown, so downloads
 // and decoding finish while the page opens instead of during the first swipe.
@@ -12,7 +14,7 @@ const GALLERY_EAGER_SLIDES = 6
 const GALLERY_PRELOAD_AHEAD = 3
 
 function featureItems(features) {
-  return (features || []).map((name, index) => ({ name, icon: featureIcons[index % featureIcons.length] }))
+  return (features || []).map(name => ({ name, icon: featureIcon(name) }))
 }
 
 function normaliseColorSizeStocks(product) {
@@ -197,7 +199,7 @@ Page({
       wx.navigateBack({ delta: 1 })
       return
     }
-    wx.switchTab({ url: '/pages/home/home' })
+    openTab('home')
   },
   onLoad(options) {
     const id = Number(options.id)
@@ -222,16 +224,21 @@ Page({
     this.loadRemoteProduct(id, warmPromise, previewReady)
   },
   onShow() {
+    preloadNextPageWhenQuiet(this)
     if (this.hasShownOnce) this.refreshCurrentProduct()
     this.hasShownOnce = true
+  },
+  onPageTouch(e) {
+    noteTouch(e)
   },
   async refreshCurrentProduct() {
     if (!this.currentProductId) return
     try {
-      if (!await refreshDataVersion(true)) return
-      const product = await fetchProduct(this.currentProductId)
-      this.applyProduct(product, true)
-      const settings = await fetchStoreSettings()
+      await refreshDataVersion(true)
+      // Compared with what it shows: the change may have been noticed on another page already.
+      if (dataVersion() === this.renderedVersion) return
+      const [product, settings] = await Promise.all([fetchProduct(this.currentProductId), fetchStoreSettings()])
+      this.applyProduct(product, true, this.data.selectedColor)
       this.setData({ featureItems: featureItems(settings.productFeatures) })
     } catch (error) {
       console.info('商品详情同步检查失败', error.errMsg || error.message)
@@ -239,14 +246,15 @@ Page({
   },
   onRefresh() {
     refreshFromServer(this, async () => {
-      // Unchanged since it was shown: skip the re-render, which on a page with this many
-      // pictures made the refresh animation stutter.
-      if (!this.currentProductId || dataVersion() === this.renderedVersion) return
+      // Unchanged since it was shown: nothing to re-render.
+      if (!this.currentProductId || dataVersion() === this.renderedVersion) return null
       const [product, settings] = await Promise.all([fetchProduct(this.currentProductId), fetchStoreSettings()])
-      // Pictures that failed to load before get another try.
-      this.brokenGalleryImages = null
-      this.applyProduct(product, true, this.data.selectedColor)
-      this.setData({ featureItems: featureItems(settings.productFeatures) })
+      return () => {
+        // Pictures that failed to load before get another try.
+        this.brokenGalleryImages = null
+        this.applyProduct(product, true, this.data.selectedColor)
+        this.setData({ featureItems: featureItems(settings.productFeatures) })
+      }
     })
   },
   // preferredColor keeps the colour being viewed when the product is reloaded.
@@ -255,7 +263,7 @@ Page({
     if (this.brokenGalleryImages?.has(product.posterImage)) product.posterImage = ''
     const selectedColor = product.colors.includes(preferredColor) ? preferredColor : (product.colors[0] || '')
     // The data version this page shows (a preview from the list is not the full product).
-    this.renderedVersion = productReady ? dataVersion() : ''
+    this.renderedVersion = productReady ? (source?.dataVersion || '') : ''
     const selection = selectProductColor(product, selectedColor)
     this.setGallery({
       ...selection,
@@ -268,9 +276,11 @@ Page({
   async loadRemoteProduct(id, warmPromise, skipDuplicateApply = false) {
     const settingsPromise = fetchStoreSettings()
     try {
-      const product = await (warmPromise || fetchProduct(id))
+      let product = await (warmPromise || fetchProduct(id))
+      // Fetched ahead on 分类 before a change that has been noticed since: fetched again.
+      if (product && product.dataVersion !== dataVersion()) product = await fetchProduct(id)
       if (!product) throw new Error('商品资料加载失败')
-      if (!skipDuplicateApply) this.applyProduct(product, true)
+      if (!skipDuplicateApply || product.dataVersion !== this.renderedVersion) this.applyProduct(product, true)
     } catch (error) {
       this.setData({ loadError: true })
       console.info('商品资料加载失败', error.errMsg || error.message)
@@ -379,7 +389,7 @@ Page({
     const preview = thumbnailImage(posterImage, PREVIEW_IMAGE_SIZE, 'width')
     wx.previewImage({ current: preview, urls: [preview], showmenu: true })
   },
-  goHome() { wx.switchTab({ url: '/pages/home/home' }) },
+  goHome() { openTab('home') },
   goDetailPage() { wx.navigateTo({ url: `/pages/product-detail/product-detail?id=${this.data.product.id}` }) },
   goRealPhotos() { wx.navigateTo({ url: `/pages/real-photos/real-photos?id=${this.data.product.id}` }) },
   goDesigner() {
@@ -397,7 +407,7 @@ Page({
       sourceType: selectedColor ? `${selectedColor}款式图` : '商品款式图',
       launchKey: `${Date.now()}-${id}-${selectedColor}`
     })
-    wx.switchTab({ url: '/pages/designer/designer' })
+    openTab('designer')
   },
   onShareAppMessage() {
     const query = productQuery(this.data.product)

@@ -1,6 +1,8 @@
 const { getSearchHistory, saveSearchKeyword, clearSearchHistory } = require('../../common/search-history')
 const { appName, appShare, timelineShare, favoriteShare } = require('../../common/share')
 const { setCategoryIntent } = require('../../common/category-intent')
+const { openTab } = require('../../common/tabs')
+const { preloadNextPageWhenQuiet, noteTouch } = require('../../common/webview-preload')
 
 Page({
   data: {
@@ -10,7 +12,6 @@ Page({
     inputFocused: true
   },
   onLoad(options) {
-    this.searchSubmitted = false
     let keyword = ''
     try {
       keyword = options.keyword ? decodeURIComponent(options.keyword) : ''
@@ -26,12 +27,16 @@ Page({
     this.lastHistorySignature = JSON.stringify(searchHistory)
   },
   onShow() {
+    preloadNextPageWhenQuiet(this)
     const searchHistory = getSearchHistory()
     const signature = JSON.stringify(searchHistory)
     if (signature !== this.lastHistorySignature) {
       this.lastHistorySignature = signature
       this.setData({ searchHistory })
     }
+  },
+  onPageTouch(e) {
+    noteTouch(e)
   },
   onKeyword(e) {
     this.setData({ keyword: e.detail.value })
@@ -49,13 +54,12 @@ Page({
     const searchHistory = saveSearchKeyword(keyword)
     this.setData({ keyword, searchHistory, inputFocused: false })
     this.lastHistorySignature = JSON.stringify(searchHistory)
-    this.searchSubmitted = true
     setCategoryIntent({
       category: '全部商品',
       type: 'all',
       keyword
     })
-    wx.switchTab({ url: '/pages/category/category' })
+    openTab('category')
   },
   useSearchHistory(e) {
     const keyword = String(e.currentTarget.dataset.keyword || '').trim()
@@ -66,13 +70,8 @@ Page({
     this.setData({ searchHistory: clearSearchHistory(), inputFocused: true })
   },
   goBack() {
-    setCategoryIntent({
-      reset: true,
-      category: '全部商品',
-      type: 'all',
-      keyword: ''
-    })
-    wx.switchTab({ url: '/pages/home/home' })
+    if (getCurrentPages().length > 1) wx.navigateBack({ delta: 1 })
+    else openTab('home')
   },
   onShareAppMessage() {
     const keyword = String(this.data.keyword || '').trim()
@@ -95,15 +94,5 @@ Page({
       title: `搜索商品｜${appName()}`,
       query: keyword ? `keyword=${encodeURIComponent(keyword)}` : ''
     })
-  },
-  onUnload() {
-    if (!this.searchSubmitted) {
-      setCategoryIntent({
-        reset: true,
-        category: '全部商品',
-        type: 'all',
-        keyword: ''
-      })
-    }
   }
 })

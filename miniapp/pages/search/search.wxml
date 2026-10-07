@@ -1,4 +1,4 @@
-<view class="search-page-shell">
+<view class="search-page-shell" capture-bind:touchstart="onPageTouch" capture-bind:touchend="onPageTouch" capture-bind:touchcancel="onPageTouch">
   <view class="page-navigation page-navigation--sticky" style="padding-top: {{pageNavigation.statusBarHeight}}rpx;">
     <view class="page-navigation__bar" style="height: {{pageNavigation.navigationBarHeight}}rpx;">
       <view class="page-navigation__back" bindtap="goBack" aria-label="返回">
@@ -11,7 +11,7 @@
   <view class="search-page">
     <view class="search-workbench surface">
       <view class="search-box dedicated-search">
-        <text class="search-icon">⌕</text>
+        <image class="search-icon" src="/assets/icons/search-muted.png" />
         <input
           class="search-input"
           value="{{keyword}}"
@@ -21,25 +21,21 @@
           confirm-type="search"
           placeholder="输入款号、商品名称、品类或面料"
         />
-        <view class="keyword-clear" wx:if="{{keyword}}" bindtap="clearKeyword" aria-label="清空输入">×</view>
-        <view class="search-submit" bindtap="submitSearch">搜索</view>
+        <view class="keyword-clear" wx:if="{{keyword}}" hover-class="is-pressed" bindtap="clearKeyword" aria-label="清空输入"><image src="/assets/icons/close-muted.png" /></view>
+        <view class="search-submit" hover-class="is-pressed" bindtap="submitSearch">搜索</view>
       </view>
-      <view class="search-scope">默认搜索全部已上架商品</view>
     </view>
 
     <view class="history-card surface">
       <view class="history-header">
-        <view>
-          <view class="history-title">最近搜索</view>
-          <view class="history-subtitle">本机保留最近 20 条，不需要登录</view>
-        </view>
-        <view class="history-clear" wx:if="{{searchHistory.length}}" bindtap="clearHistory">清空记录</view>
+        <view class="history-title">最近搜索</view>
+        <view class="history-clear" wx:if="{{searchHistory.length}}" hover-class="is-pressed" bindtap="clearHistory">清空记录</view>
       </view>
       <view class="history-list" wx:if="{{searchHistory.length}}">
-        <view class="history-item" wx:for="{{searchHistory}}" wx:key="*this" data-keyword="{{item}}" bindtap="useSearchHistory">
-          <text class="history-icon">⌕</text>
+        <view class="history-item" wx:for="{{searchHistory}}" wx:key="*this" data-keyword="{{item}}" hover-class="is-pressed" bindtap="useSearchHistory">
+          <image class="history-icon" src="/assets/icons/search-faint.png" />
           <text class="history-keyword">{{item}}</text>
-          <text class="history-arrow">›</text>
+          <image class="history-arrow" src="/assets/icons/chevron-right-faint.png" />
         </view>
       </view>
       <view class="history-empty" wx:else>还没有搜索记录</view>

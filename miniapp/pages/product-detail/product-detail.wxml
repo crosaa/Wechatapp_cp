@@ -1,4 +1,4 @@
-<view class="page-shell">
+<view class="page-shell" capture-bind:touchstart="onPageTouch" capture-bind:touchend="onPageTouch" capture-bind:touchcancel="onPageTouch">
   <view class="page-navigation" style="padding-top: {{pageNavigation.statusBarHeight}}rpx;">
     <view class="page-navigation__bar" style="height: {{pageNavigation.navigationBarHeight}}rpx;">
       <view class="page-navigation__back" bindtap="goBack" aria-label="返回">
@@ -13,8 +13,7 @@
         <view class="detail-hero-media">
           <stable-image class="detail-hero-image" src="{{product.imageDisplay}}" mode="aspectFit" data-url="{{product.image}}" bind:imagetap="previewImage" show-menu-by-longpress="{{true}}" />
           <view class="detail-image-actions">
-            <text>点击高清预览</text>
-            <view class="detail-original-download" data-url="{{product.image}}" catchtap="downloadOriginal">下载原图</view>
+            <view class="detail-original-download" data-url="{{product.image}}" hover-class="is-pressed" catchtap="downloadOriginal">下载原图</view>
           </view>
         </view>
         <view class="detail-hero-copy">
@@ -38,9 +37,9 @@
       <view class="detail-gallery surface">
         <view class="detail-slide" wx:for="{{product.detailSlides}}" wx:key="original">
           <image src="{{item.display}}" mode="widthFix" data-url="{{item.original}}" bindtap="previewImage" binderror="onDetailImageError" show-menu-by-longpress="{{true}}" lazy-load="{{true}}" fade-in="{{false}}" />
-          <view class="detail-slide-download" data-url="{{item.original}}" catchtap="downloadOriginal">下载原图</view>
+          <view class="detail-slide-download" data-url="{{item.original}}" hover-class="is-pressed" catchtap="downloadOriginal">下载原图</view>
         </view>
-        <view wx:if="{{!product.detailImageCount}}" class="detail-empty">后台暂未上传详情长图</view>
+        <view wx:if="{{!product.detailImageCount}}" class="detail-empty">暂无详情图</view>
         <view wx:elif="{{product.detailSlides.length < product.detailImageCount}}" class="detail-loading">继续下滑加载剩余图片</view>
       </view>
 
@@ -57,9 +56,9 @@
   <view class="subpage-first-block"></view>
 </view>
 <view class="subpage-bottom-bar">
-  <view class="subpage-home" bindtap="goHome">
+  <view class="subpage-home" hover-class="is-pressed" bindtap="goHome">
     <image src="/assets/tabbar/home-normal.png" mode="aspectFit" />
     <text>首页</text>
   </view>
-  <button class="subpage-return" bindtap="goBack">返回商品</button>
+  <button class="subpage-return" hover-class="is-pressed" bindtap="goBack">返回商品</button>
 </view>

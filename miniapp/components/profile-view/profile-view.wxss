@@ -6,15 +6,23 @@
 .profile-store { margin-bottom: 4rpx; color: #66501e; font-size: 20rpx; font-weight: 700; letter-spacing: 2rpx; }
 .profile-name { font-size: 36rpx; font-weight: 900; }
 .profile-desc { margin-top: 8rpx; color: #75591e; font-size: 22rpx; }
-.profile-card { margin: 22rpx; border-radius: 20rpx; }
-.layout-brand .profile-hero { min-height: 330rpx; background: linear-gradient(145deg, #244f3d, #3f735b); color: white; }
-.layout-brand .profile-store, .layout-brand .profile-desc { color: #c6dbcf; }
+.profile-card { margin: 22rpx; border-radius: var(--radius-large); }
+.layout-brand .profile-hero { min-height: 330rpx; background: linear-gradient(145deg, #292925, #4a463d); color: white; }
+.layout-brand .profile-store, .layout-brand .profile-desc { color: #e8d6a8; }
 .layout-brand .profile-card { margin-top: -38rpx; position: relative; }
 .profile-card { padding: 24rpx 10rpx 20rpx; }
 .profile-card-title { padding: 0 18rpx 20rpx; font-size: 29rpx; font-weight: 800; }
 .service-grid { display: grid; grid-template-columns: repeat(4, 1fr); row-gap: 26rpx; }
 .service-grid view { display: flex; flex-direction: column; align-items: center; color: #625f59; font-size: 21rpx; }
-.service-icon { display: flex; align-items: center; justify-content: center; height: 58rpx; margin-bottom: 9rpx; color: #b8882d; font-size: 32rpx; font-weight: 900; }
-.about-card { margin: 22rpx; padding: 24rpx 28rpx; border-radius: 20rpx; color: #6f6b64; font-size: 23rpx; line-height: 1.8; }
+.service-icon { display: block; width: 48rpx; height: 48rpx; margin: 5rpx 0 14rpx; }
+/* 退/换货流程 and 可预订产品: categories that are not kinds of clothing (common/category-groups.js). */
+.shop-card { margin: 22rpx; padding: 24rpx 28rpx 6rpx; border-radius: var(--radius-large); }
+.shop-card .profile-card-title { padding: 0 0 8rpx; }
+.shop-entry { display: flex; align-items: center; min-height: 96rpx; }
+.shop-entry + .shop-entry { border-top: 1rpx solid #eeeae2; }
+.shop-entry-icon { width: 40rpx; height: 40rpx; margin-right: 18rpx; flex-shrink: 0; }
+.shop-entry-name { flex: 1; color: #282822; font-size: 28rpx; }
+.shop-entry-arrow { width: 26rpx; height: 26rpx; flex-shrink: 0; }
+.about-card { margin: 22rpx; padding: 24rpx 28rpx; border-radius: var(--radius-large); color: #6f6b64; font-size: 23rpx; line-height: 1.8; }
 .about-card .profile-card-title { padding: 0 0 12rpx; color: #282822; }
 .profile-foot { padding: 70rpx 0 40rpx; text-align: center; color: #aaa69d; font-size: 20rpx; letter-spacing: 2rpx; }

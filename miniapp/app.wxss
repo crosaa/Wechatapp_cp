@@ -1,3 +1,12 @@
+/* Corner sizes shared by every page and section: three, plus pills and circles. Line icons are
+   drawn in the bottom bar's style (assets/icons, scripts/generate-ui-icons.mjs). */
+page {
+  --radius-small: 8rpx;
+  --radius-medium: 16rpx;
+  --radius-large: 24rpx;
+  --radius-pill: 999rpx;
+}
+
 page {
   background: #f6f4ef;
   color: #20201d;
@@ -16,6 +25,8 @@ button::after { border: 0; }
    refresh) in a scroll-view below the bar. */
 .page-shell { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 .page-scroll { flex: 1; height: 0; }
+/* 设计 and 我的 scroll in their own area inside the main page (pages/home/home). */
+.section-scroll { height: 100%; }
 /* The refresher moves the content with a transform on every touch move. On its own layer
    the content is just moved instead of repainted each frame (pages with many large
    pictures stuttered while being pulled). */
@@ -25,6 +36,11 @@ button::after { border: 0; }
 .accent { color: #d99a21; }
 .price { color: #df6148; font-weight: 700; }
 .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+/* What anything that can be tapped shows while it is pressed (hover-class="is-pressed"). */
+.is-pressed { opacity: .6; }
+/* Room for the main page's bottom bar (components/tab-bar) under each of its sections. */
+page { --tab-bar-space: calc(48px + env(safe-area-inset-bottom)); }
+.tab-bar-space { padding-bottom: var(--tab-bar-space); }
 .page-navigation {
   position: relative;
   z-index: 20;
@@ -106,7 +122,7 @@ button::after { border: 0; }
   height: 88rpx;
   flex-shrink: 0;
   border: 1rpx solid #e9e4da;
-  border-radius: 22rpx;
+  border-radius: var(--radius-large);
   background: #f8f6f2;
   color: #6f6a61;
   font-size: 19rpx;
@@ -120,8 +136,9 @@ button::after { border: 0; }
   height: 88rpx;
   flex: 1;
   margin: 0;
-  border-radius: 22rpx;
-  background: #265b46;
+  border-radius: var(--radius-large);
+  background: linear-gradient(105deg, #c98618, #e6ad32);
+  box-shadow: 0 10rpx 24rpx rgba(198,132,22,.25);
   color: #fff;
   font-size: 27rpx;
   font-weight: 800;
@@ -134,12 +151,12 @@ button::after { border: 0; }
   height: 76rpx;
   margin: 18rpx 24rpx;
   padding: 0 26rpx;
-  border-radius: 38rpx;
+  border-radius: var(--radius-pill);
   background: #ffffff;
   box-shadow: 0 10rpx 30rpx rgba(65, 53, 30, .07);
 }
 
-.search-icon { margin-right: 16rpx; color: #9a978f; }
+.search-icon { width: 32rpx; height: 32rpx; margin-right: 16rpx; flex-shrink: 0; }
 .search-input { flex: 1; font-size: 27rpx; }
 
 .section-head {
@@ -149,7 +166,7 @@ button::after { border: 0; }
   padding: 34rpx 26rpx 20rpx;
 }
 .section-title { font-size: 34rpx; font-weight: 800; }
-.section-more { color: #9b978c; font-size: 24rpx; }
+.section-more { display: flex; align-items: center; color: #9b978c; font-size: 24rpx; }
 
 .pill {
   display: inline-flex;
@@ -157,7 +174,7 @@ button::after { border: 0; }
   justify-content: center;
   height: 48rpx;
   padding: 0 18rpx;
-  border-radius: 24rpx;
+  border-radius: var(--radius-pill);
   background: #f3eee3;
   color: #6d6558;
   font-size: 22rpx;

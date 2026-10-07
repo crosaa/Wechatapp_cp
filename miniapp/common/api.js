@@ -117,12 +117,21 @@ function cached(key, ttl, loader, options = {}) {
     responseCache.set(key, { value: persisted, expiresAt: now + ttl })
     return Promise.resolve(persisted)
   }
-  const promise = loader().then(value => {
+  // The loader is told the data version known when asking, to mark what it returns. If a change is
+  // noticed before the answer arrives, the answer may be from before the change: it is not kept,
+  // and asked for again.
+  const version = currentDataVersion
+  const ours = () => responseCache.get(key)?.promise === promise
+  const promise = loader(version).then(value => {
+    if (currentDataVersion !== version) {
+      if (ours()) responseCache.delete(key)
+      return cached(key, ttl, loader, options)
+    }
     responseCache.set(key, { value, expiresAt: Date.now() + ttl })
     if (options.persistent) writePersistentCache(key, value)
     return value
   }).catch(error => {
-    responseCache.delete(key)
+    if (ours()) responseCache.delete(key)
     throw error
   })
   responseCache.set(key, { promise, expiresAt: now + ttl })
@@ -162,8 +171,9 @@ function acceptDataVersion(nextVersion) {
 }
 
 // The version the cached public data belongs to. Pages compare it with the
-// version they rendered, because a change may already have been noticed (and
-// accepted) by another page, in which case refreshDataVersion reports false.
+// version of the data they show (its dataVersion), because a change may already
+// have been noticed (and accepted) by another page, in which case
+// refreshDataVersion reports false.
 function dataVersion() {
   return currentDataVersion
 }
@@ -401,7 +411,8 @@ function readHomeSnapshot() {
   primePublicCache('store-settings', cachedStoreSettings)
   return {
     categories: cachedCategories,
-    storeSettings: cachedStoreSettings
+    storeSettings: cachedStoreSettings,
+    dataVersion: currentDataVersion
   }
 }
 
@@ -422,7 +433,8 @@ function readCatalogSnapshot() {
   return {
     products,
     categories: cachedCategories,
-    storeSettings: cachedStoreSettings
+    storeSettings: cachedStoreSettings,
+    dataVersion: currentDataVersion
   }
 }
 
@@ -432,15 +444,24 @@ function readProductSnapshot(id) {
   const index = readPersistentCacheIndex()
   if (!index.version) return null
   acceptDataVersion(index.version)
-  const product = readPersistentCache(`product:${numericId}`, true)
-  if (product === undefined) return null
+  const stored = readPersistentCache(`product:${numericId}`, true)
+  if (stored === undefined) return null
+  const product = { ...stored, dataVersion: currentDataVersion }
   primePublicCache(`product:${numericId}`, product)
   return product
 }
 
-async function fetchHomeContent() {
+// An answer that set out before a change was noticed, and is not from that change, may be from
+// before it: such an answer is asked for again (see cached).
+function overtaken(knownWhenAsked, answerVersion) {
+  return currentDataVersion !== knownWhenAsked && String(answerVersion || '') !== currentDataVersion
+}
+
+async function fetchHomeContent(retries = 2) {
+  const known = currentDataVersion
   const result = await request('/api/home-content', {}, { enableCache: false, timeout: 8000 })
   const payload = result?.data || {}
+  if (retries > 0 && overtaken(known, payload.version)) return fetchHomeContent(retries - 1)
   acceptDataVersion(payload.version)
   lastVersionCheckAt = Date.now()
   const homeCategories = hydrateCategories(payload.categories || [])
@@ -449,13 +470,16 @@ async function fetchHomeContent() {
   primePublicCache('store-settings', homeStoreSettings, true)
   return {
     categories: homeCategories,
-    storeSettings: homeStoreSettings
+    storeSettings: homeStoreSettings,
+    dataVersion: String(payload.version || '')
   }
 }
 
-async function fetchCatalogContent() {
+async function fetchCatalogContent(retries = 2) {
+  const known = currentDataVersion
   const result = await request('/api/catalog-content', {}, { enableCache: false, timeout: 10000 })
   const payload = result?.data || {}
+  if (retries > 0 && overtaken(known, payload.version)) return fetchCatalogContent(retries - 1)
   acceptDataVersion(payload.version)
   lastVersionCheckAt = Date.now()
   const rawProducts = payload.products || []
@@ -471,7 +495,8 @@ async function fetchCatalogContent() {
   return {
     products: catalogProducts,
     categories: catalogCategories,
-    storeSettings: catalogStoreSettings
+    storeSettings: catalogStoreSettings,
+    dataVersion: String(payload.version || '')
   }
 }
 
@@ -497,9 +522,10 @@ async function fetchProductSummaries(params = {}) {
 
 async function fetchProduct(id) {
   await refreshDataVersion()
-  return cached(`product:${id}`, 30 * 60 * 1000, async () => {
+  return cached(`product:${id}`, 30 * 60 * 1000, async version => {
     const result = await request(`/api/products/${id}`)
-    return hydrateProduct(result.data)
+    // Marked with the data version it belongs to: pages keep it as the version they show.
+    return { ...hydrateProduct(result.data), dataVersion: version }
   }, { persistent: true })
 }
 

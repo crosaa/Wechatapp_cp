@@ -1,4 +1,5 @@
 {
   "navigationStyle": "custom",
+  "handleWebviewPreload": "manual",
   "enablePullDownRefresh": false
 }

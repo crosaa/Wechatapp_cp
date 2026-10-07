@@ -34,7 +34,7 @@ await mkdir(outputDir, { recursive: true })
 for (const [name, drawing] of Object.entries(drawings)) {
   for (const [state, color] of Object.entries(colors)) {
     const svg = Buffer.from(`
-      <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+      <svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 64 64">
         <g fill="none" stroke="${color}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
           ${drawing}
         </g>

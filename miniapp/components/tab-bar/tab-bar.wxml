@@ -1,0 +1,6 @@
+<view class="tab-bar">
+  <view class="tab-bar-item" wx:for="{{tabs}}" wx:key="key" data-index="{{index}}" bindtap="onTap" role="button" aria-label="{{item.text}}">
+    <image class="tab-bar-icon" src="{{selected === index ? item.selectedIconPath : item.iconPath}}" />
+    <text class="tab-bar-text {{selected === index ? 'selected' : ''}}">{{item.text}}</text>
+  </view>
+</view>

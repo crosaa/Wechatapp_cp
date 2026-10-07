@@ -1,5 +1,5 @@
 {
   "navigationStyle": "custom",
-  "enablePullDownRefresh": false,
+  "handleWebviewPreload": "manual",
   "usingComponents": {}
 }

@@ -1,9 +1,7 @@
-// The category tab reads `categoryIntent` to decide which list to show. If the tab
-// is already loaded and hidden, it applies the intent right away, so switching to it
-// shows the new list without a visible re-render.
+// The list 分类 should show next (a category, a search or picture-search result). The 分类 section
+// applies it just before it is shown (components/category-view, prepareShow).
 function setCategoryIntent(intent) {
   wx.setStorageSync('categoryIntent', intent)
-  getApp().categoryPage?.applyIntentWhileHidden()
 }
 
 module.exports = { setCategoryIntent }

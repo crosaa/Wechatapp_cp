@@ -1,7 +1,12 @@
 {
   "navigationStyle": "custom",
+  "handleWebviewPreload": "manual",
   "disableScroll": true,
   "usingComponents": {
-    "stable-image": "/components/stable-image/stable-image"
+    "home-view": "/components/home-view/home-view",
+    "category-view": "/components/category-view/category-view",
+    "designer-view": "/components/designer-view/designer-view",
+    "profile-view": "/components/profile-view/profile-view",
+    "tab-bar": "/components/tab-bar/tab-bar"
   }
 }

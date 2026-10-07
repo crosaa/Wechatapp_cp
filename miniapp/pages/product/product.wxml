@@ -1,4 +1,4 @@
-<view class="page-shell">
+<view class="page-shell" capture-bind:touchstart="onPageTouch" capture-bind:touchend="onPageTouch" capture-bind:touchcancel="onPageTouch">
   <view class="page-navigation" style="padding-top: {{pageNavigation.statusBarHeight}}rpx;">
     <view class="page-navigation__bar" style="height: {{pageNavigation.navigationBarHeight}}rpx;">
       <view class="page-navigation__back" bindtap="goBack" aria-label="返回">
@@ -16,8 +16,7 @@
           </swiper-item>
         </swiper>
         <view class="gallery-loading" wx:if="{{!selectedGallery.length}}">正在打开商品…</view>
-        <view class="gallery-download" wx:if="{{selectedGallery.length}}" data-url="{{selectedGallery[galleryIndex]}}" catchtap="downloadOriginal">下载原图</view>
-        <view class="gallery-action-tip" wx:if="{{selectedGallery.length}}">点击高清预览</view>
+        <view class="gallery-download" wx:if="{{selectedGallery.length}}" data-url="{{selectedGallery[galleryIndex]}}" hover-class="is-pressed" catchtap="downloadOriginal">下载原图</view>
         <view class="gallery-label" wx:if="{{selectedGallery.length}}">{{galleryLabel}} · {{galleryIndex + 1}}/{{selectedGallery.length}}</view>
       </view>
 
@@ -25,7 +24,7 @@
         <view class="summary-top">
           <view><text class="price-symbol">¥</text><text class="summary-price">{{displayPrice}}</text><text class="special-price-note" wx:if="{{specialPriceActive}}">特殊尺码价</text></view>
           <view class="action-row {{productReady ? '' : 'summary-placeholder'}}">
-            <view class="action-item" bindtap="savePoster"><text>▧</text><view>海报</view></view>
+            <view class="action-item" hover-class="is-pressed" bindtap="savePoster"><image class="action-icon" src="/assets/icons/poster-text.png" /><view>海报</view></view>
           </view>
         </view>
         <view class="product-title">{{product.name}}</view>
@@ -34,7 +33,6 @@
           <view wx:if="{{displayStock === 0}}" class="inventory-pill out">当前颜色暂时缺货</view>
           <view wx:elif="{{displayStock <= 10}}" class="inventory-pill low">当前颜色库存紧张：仅剩 {{displayStock}}</view>
           <view wx:else class="inventory-pill">当前颜色现货库存：{{displayStock}}</view>
-          <text>库存与管理后台同步</text>
         </view>
         <view class="tag-row" wx:if="{{product.badge && product.badge !== '热销' && product.badge !== '定制'}}"><text>{{product.badge}}</text></view>
       </view>
@@ -48,11 +46,11 @@
       <view class="option-card surface">
         <view class="option-label">颜色 <text>已选 {{selectedColor}}</text></view>
         <view class="choice-row">
-          <view class="choice {{selectedColor === item ? 'choice-active' : ''}}" wx:for="{{product.colors}}" wx:key="*this" data-value="{{item}}" bindtap="selectColor">{{item}}</view>
+          <view class="choice {{selectedColor === item ? 'choice-active' : ''}}" wx:for="{{product.colors}}" wx:key="*this" data-value="{{item}}" hover-class="is-pressed" bindtap="selectColor">{{item}}</view>
         </view>
         <view class="option-label size-label">尺码 <text>{{selectedSize ? '已选 ' + selectedSize : '暂无可选尺码'}}</text></view>
         <view class="choice-row">
-          <view class="choice size {{selectedSize === item.name ? 'choice-active' : ''}} {{item.stock === 0 ? 'choice-disabled' : ''}}" wx:for="{{product.sizeOptions}}" wx:key="name" data-value="{{item.name}}" data-stock="{{item.stock}}" bindtap="selectSize">
+          <view class="choice size {{selectedSize === item.name ? 'choice-active' : ''}} {{item.stock === 0 ? 'choice-disabled' : ''}}" wx:for="{{product.sizeOptions}}" wx:key="name" data-value="{{item.name}}" data-stock="{{item.stock}}" hover-class="is-pressed" bindtap="selectSize">
             <text class="size-name">{{item.name}}</text>
             <text class="size-stock {{selectedSize === item.name ? 'active' : ''}} {{item.stock === 0 ? 'disabled' : ''}}">{{item.stockLabel}}</text>
           </view>
@@ -60,15 +58,15 @@
       </view>
 
       <view class="content-entry-card surface">
-        <view class="content-entry" bindtap="goDetailPage">
-          <view class="entry-icon detail">详</view>
-          <view class="entry-copy"><text>商品详情</text><text>点击后逐张翻看 · {{product.detailImageCount || 0}} 张</text></view>
-          <text class="entry-arrow">›</text>
+        <view class="content-entry" hover-class="is-pressed" bindtap="goDetailPage">
+          <view class="entry-icon detail"><image src="/assets/icons/document-gold-deep.png" /></view>
+          <view class="entry-copy"><text>商品详情</text><text>共 {{product.detailImageCount || 0}} 张详情图</text></view>
+          <image class="entry-arrow" src="/assets/icons/chevron-right-faint.png" />
         </view>
-        <view class="content-entry" bindtap="goRealPhotos">
-          <view class="entry-icon real">实</view>
-          <view class="entry-copy"><text>实拍图</text><text>按分类逐张翻看 · {{product.realImageCount || 0}} 张</text></view>
-          <text class="entry-arrow">›</text>
+        <view class="content-entry" hover-class="is-pressed" bindtap="goRealPhotos">
+          <view class="entry-icon real"><image src="/assets/icons/camera-gold-deep.png" /></view>
+          <view class="entry-copy"><text>实拍图</text><text>共 {{product.realImageCount || 0}} 张实拍图</text></view>
+          <image class="entry-arrow" src="/assets/icons/chevron-right-faint.png" />
         </view>
       </view>
 
@@ -84,7 +82,7 @@
 
       <view class="feature-card surface" wx:if="{{featureItems.length}}">
         <view class="feature-grid">
-          <view wx:for="{{featureItems}}" wx:key="name"><text class="feature-icon">{{item.icon}}</text><text>{{item.name}}</text></view>
+          <view wx:for="{{featureItems}}" wx:key="name"><image class="feature-icon" src="{{item.icon}}" /><text>{{item.name}}</text></view>
         </view>
       </view>
       </block>
@@ -94,12 +92,12 @@
   </scroll-view>
 </view>
 <view class="product-bottom-bar">
-  <view class="home-button" bindtap="goHome">
+  <view class="home-button" hover-class="is-pressed" bindtap="goHome">
     <image class="home-icon" src="/assets/tabbar/home-normal.png" mode="aspectFit" />
     <text>首页</text>
   </view>
-  <button class="design-button" bindtap="goDesigner">
+  <button class="design-button" hover-class="is-pressed" bindtap="goDesigner">
     <text>用这款开始设计</text>
-    <text class="design-arrow">→</text>
+    <image class="design-arrow" src="/assets/icons/arrow-right-white.png" />
   </button>
 </view>

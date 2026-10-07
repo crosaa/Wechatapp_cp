@@ -2,6 +2,8 @@ const { fetchProduct, readProductSnapshot, refreshDataVersion, dataVersion, thum
 const { firstImage, appShare, timelineShare, favoriteShare, productTitle, productQuery } = require('../../common/share')
 const { saveOriginalImage } = require('../../common/image')
 const { refreshFromServer } = require('../../common/pull-refresh')
+const { openTab } = require('../../common/tabs')
+const { preloadNextPageWhenQuiet, noteTouch } = require('../../common/webview-preload')
 
 const PHOTO_BATCH_SIZE = 8
 const PREVIEW_IMAGE_SIZE = 2000
@@ -40,10 +42,10 @@ Page({
       wx.navigateBack({ delta: 1 })
       return
     }
-    wx.switchTab({ url: '/pages/home/home' })
+    openTab('home')
   },
   goHome() {
-    wx.switchTab({ url: '/pages/home/home' })
+    openTab('home')
   },
   onLoad(options) {
     this.productId = Number(options.id)
@@ -51,7 +53,7 @@ Page({
     const cachedProduct = readProductSnapshot(this.productId)
     if (cachedProduct) {
       this.sourceProduct = cachedProduct
-      this.renderedVersion = dataVersion()
+      this.renderedVersion = cachedProduct.dataVersion || ''
       this.applyGallery(cachedProduct)
       this.refreshProduct()
     } else {
@@ -59,34 +61,43 @@ Page({
     }
   },
   onShow() {
+    preloadNextPageWhenQuiet(this)
     if (this.hasShownOnce) this.refreshProduct()
     this.hasShownOnce = true
   },
+  onPageTouch(e) {
+    noteTouch(e)
+  },
   async refreshProduct() {
     try {
-      if (await refreshDataVersion(true)) await this.loadProduct(this.productId, this.data.selected)
+      await refreshDataVersion(true)
+      // Compared with what it shows: the change may have been noticed on another page already.
+      if (dataVersion() !== this.renderedVersion) await this.loadProduct(this.productId, this.data.selected)
     } catch (error) {
       console.info('实拍图同步检查失败', error.errMsg || error.message)
     }
   },
   onRefresh() {
     refreshFromServer(this, async () => {
-      // Unchanged since it was shown: skip the re-render, which on a page with this many
-      // pictures made the refresh animation stutter.
-      if (dataVersion() !== this.renderedVersion) await this.loadProduct(this.productId, this.data.selected, { rethrow: true })
+      // Unchanged since it was shown: nothing to re-render.
+      if (dataVersion() === this.renderedVersion) return null
+      const product = await fetchProduct(this.productId)
+      return () => this.showProduct(product, this.data.selected)
     })
   },
-  async loadProduct(id, selected = '全部', { rethrow = false } = {}) {
+  async loadProduct(id, selected = '全部') {
     try {
-      this.sourceProduct = await fetchProduct(id)
-      this.renderedVersion = dataVersion()
-      const categories = ['全部', ...new Set((this.sourceProduct.realImages || []).map(item => item.category || '实物展示'))]
-      this.applyGallery(this.sourceProduct, categories.includes(selected) ? selected : '全部')
+      this.showProduct(await fetchProduct(id), selected)
     }
     catch (error) {
-      if (rethrow) throw error
       console.info('商品服务未启动，实拍图继续使用本地演示数据', error.errMsg || error.message)
     }
+  },
+  showProduct(product, selected) {
+    this.sourceProduct = product
+    this.renderedVersion = product.dataVersion || ''
+    const categories = ['全部', ...new Set((product.realImages || []).map(item => item.category || '实物展示'))]
+    this.applyGallery(product, categories.includes(selected) ? selected : '全部')
   },
   selectCategory(event) {
     if (!this.sourceProduct) return
@@ -128,7 +139,7 @@ Page({
       sourceType: '实拍图',
       launchKey: `${Date.now()}-${product.id}-real`
     })
-    wx.switchTab({ url: '/pages/designer/designer' })
+    openTab('designer')
   },
   onShareAppMessage() {
     const query = productQuery(this.sourceProduct || this.data.product)

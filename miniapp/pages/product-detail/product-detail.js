@@ -2,6 +2,8 @@ const { fetchProduct, readProductSnapshot, refreshDataVersion, dataVersion, thum
 const { firstImage, appShare, timelineShare, favoriteShare, productTitle, productQuery } = require('../../common/share')
 const { saveOriginalImage } = require('../../common/image')
 const { refreshFromServer } = require('../../common/pull-refresh')
+const { openTab } = require('../../common/tabs')
+const { preloadNextPageWhenQuiet, noteTouch } = require('../../common/webview-preload')
 
 const DETAIL_BATCH_SIZE = 6
 const PREVIEW_IMAGE_SIZE = 2000
@@ -49,10 +51,10 @@ Page({
       wx.navigateBack({ delta: 1 })
       return
     }
-    wx.switchTab({ url: '/pages/home/home' })
+    openTab('home')
   },
   goHome() {
-    wx.switchTab({ url: '/pages/home/home' })
+    openTab('home')
   },
   onLoad(options) {
     this.productId = Number(options.id)
@@ -65,21 +67,28 @@ Page({
     else this.loadProduct(options.id)
   },
   onShow() {
+    preloadNextPageWhenQuiet(this)
     if (this.hasShownOnce) this.refreshProduct()
     this.hasShownOnce = true
   },
+  onPageTouch(e) {
+    noteTouch(e)
+  },
   async refreshProduct() {
     try {
-      if (await refreshDataVersion(true)) await this.loadProduct(this.productId)
+      await refreshDataVersion(true)
+      // Compared with what it shows: the change may have been noticed on another page already.
+      if (dataVersion() !== this.renderedVersion) await this.loadProduct(this.productId)
     } catch (error) {
       console.info('商品详情同步检查失败', error.errMsg || error.message)
     }
   },
   onRefresh() {
     refreshFromServer(this, async () => {
-      // Unchanged since it was shown: skip the re-render, which on a page with this many
-      // pictures made the refresh animation stutter.
-      if (dataVersion() !== this.renderedVersion) this.applyProduct(await fetchProduct(this.productId))
+      // Unchanged since it was shown: nothing to re-render.
+      if (dataVersion() === this.renderedVersion) return null
+      const product = await fetchProduct(this.productId)
+      return () => this.applyProduct(product)
     })
   },
   async loadProduct(id) {
@@ -87,7 +96,7 @@ Page({
     catch (error) { console.info('商品服务未启动，详情页继续使用本地演示数据', error.errMsg || error.message) }
   },
   applyProduct(product) {
-    this.renderedVersion = dataVersion()
+    this.renderedVersion = product.dataVersion || ''
     this.allDetailSlides = buildDetailSlides(product)
     this.setData({ pageReady: true, product: detailState(product, this.allDetailSlides) })
   },

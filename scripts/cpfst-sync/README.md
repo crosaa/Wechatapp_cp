@@ -16,7 +16,7 @@
 - `server/db.mjs`：products 加 `categories_json` 列；`mapProduct` 输出 `categories` 数组；`listProducts`/`listCategories` 按 `categories.includes(名)` 归类；`create/updateProduct` 维护 `categories_json`（始终含主分类）；`updateCategory` 重命名分类时同步更新 `categories_json`。
 - `server/public/admin/`：商品编辑器支持勾选多个所属分类；后台分类筛选、首页分类概览和商品列表均按完整分类列表统计与显示。
 - `miniapp/common/api.js`：`hydrateProduct` 透传 `categories`。
-- `miniapp/pages/category/category.js`：筛选由 `category === selected` 改为 `categories.includes(selected)`。
+- `miniapp/pages/category/category.js`（现为 `miniapp/components/category-view/category-view.js`）：筛选由 `category === selected` 改为 `categories.includes(selected)`。
 - `miniapp/common/data.js`：离线兜底刷新为真实 30 分类 + 8 个真实示例商品（本服务器图片，含 `categories`）。
 
 > 改完后端代码需**重启后端**（`node server/server.mjs`，脚本 `scripts/start-local.ps1`）；小程序端改动需在微信开发者工具**重新编译**。

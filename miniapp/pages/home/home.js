@@ -1,237 +1,113 @@
-const { fetchHomeContent, readHomeSnapshot, recognizeProductImage, refreshDataVersion, dataVersion, defaultStoreSettings } = require('../../common/api')
-const { appName, appShare, timelineShare, favoriteShare } = require('../../common/share')
+const { TAB_KEYS, takePendingTab } = require('../../common/tabs')
 const { setCategoryIntent } = require('../../common/category-intent')
-const { refreshFromServer } = require('../../common/pull-refresh')
+const { appName, appShare, timelineShare, favoriteShare } = require('../../common/share')
+const { preloadNextPageWhenQuiet, noteTouch } = require('../../common/webview-preload')
 
-const initialHomeSnapshot = readHomeSnapshot()
-const initialHomeVersion = initialHomeSnapshot ? dataVersion() : ''
-const initialHomeSettings = initialHomeSnapshot?.storeSettings || defaultStoreSettings
-const initialHeroImages = initialHomeSettings.homeHeroImages?.length ? initialHomeSettings.homeHeroImages : []
-const initialHomeCategories = initialHomeSnapshot?.categories || []
+// A section that does not get ready in time is shown anyway.
+const PREPARE_TIMEOUT_MS = 600
 
+function decode(value) {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+// The main page: 首页、分类、设计、我的 are its sections (components/*-view), switched by its own
+// bottom bar (components/tab-bar). common/tabs.js explains why they are one page.
 Page({
   data: {
-    pageNavigation: getApp().globalData.pageNavigation,
-    keyword: '',
-    homeReady: Boolean(initialHomeSnapshot),
-    storeName: initialHomeSettings.storeName,
-    storeIcon: initialHomeSettings.storeIcon,
-    heroImages: initialHeroImages,
-    heroSlides: initialHeroImages.map((url, index) => ({ url, src: index === 0 ? url : '' })),
-    settings: initialHomeSettings,
-    heroCurrent: 0,
-    heroAutoplay: true,
-    imageRecognizing: false,
-    categories: initialHomeCategories,
-    refreshing: false
+    active: 'home',
+    activeIndex: 0,
+    created: { home: true }
   },
-  onLoad() {
-    this.contentVersion = initialHomeVersion
-    if (initialHomeSnapshot) {
-      this.scheduleHeroNeighbors(0)
-      this.refreshRemoteContent()
-    } else {
-      this.loadRemoteContent()
+  onLoad(options = {}) {
+    const tab = TAB_KEYS.includes(options.tab) ? options.tab : 'home'
+    if (tab === 'home') return
+    // A link to a list on 分类 (a shared category or search) says which list.
+    if (tab === 'category' && (options.category || options.type || options.keyword)) {
+      const keyword = options.keyword ? decode(options.keyword).trim() : ''
+      const category = options.category ? decode(options.category) : '全部商品'
+      setCategoryIntent({
+        category: keyword ? '全部商品' : category,
+        type: keyword ? 'all' : (options.type ? decode(options.type) : (category === '全部商品' ? 'all' : 'normal')),
+        keyword
+      })
     }
-  },
-  onUnload() {
-    this.clearHeroPrefetchTimer()
+    this.setData({ active: '', created: {} })
+    this.selectTab(tab)
   },
   onShow() {
-    setCategoryIntent({
-      reset: true,
-      category: '全部商品',
-      type: 'all',
-      keyword: ''
-    })
-    if (this.data.keyword) this.setData({ keyword: '' })
-    if (!this.data.heroAutoplay) this.setData({ heroAutoplay: true })
-    if (this.hasShownOnce) this.refreshRemoteContent()
-    this.hasShownOnce = true
+    preloadNextPageWhenQuiet(this)
+    // A page opened on top may have asked for a section (common/tabs.js openTab).
+    const pending = takePendingTab()
+    if (pending && pending !== this.data.active) {
+      this.selectTab(pending)
+      return
+    }
+    const view = this.view(this.data.active)
+    if (!view) return
+    if (pending && view.prepareShow) view.prepareShow(() => view.viewShown?.())
+    else view.viewShown?.()
   },
   onHide() {
-    // Tab pages stay alive in the background; stop the carousel so it does not
-    // keep firing change events and setData while another tab is in use.
-    this.setData({ heroAutoplay: false })
+    this.view(this.data.active)?.viewHidden?.()
   },
-  async refreshRemoteContent() {
-    try {
-      await refreshDataVersion(true)
-      if (dataVersion() !== this.contentVersion) await this.loadRemoteContent()
-    } catch (error) {
-      console.info('首页同步检查失败', error.errMsg || error.message)
+  onPageTouch(e) {
+    noteTouch(e)
+  },
+  onTabSelect(e) {
+    this.selectTab(TAB_KEYS[e.detail.index])
+  },
+  onOpenTab(e) {
+    this.selectTab(e.detail.tab)
+  },
+  // Shows a section: created out of sight the first time, made ready (分类 takes a list picked
+  // elsewhere), then shown. The section that was showing is told it was left, and may reset itself
+  // now that it is out of sight.
+  selectTab(tab) {
+    if (!TAB_KEYS.includes(tab)) return
+    const leaving = this.data.active
+    if (tab === leaving) {
+      const view = this.view(tab)
+      if (view?.prepareShow) view.prepareShow(() => view.viewShown?.())
+      return
     }
-  },
-  async loadRemoteContent({ rethrow = false } = {}) {
-    try {
-      this.applyHomeContent(await fetchHomeContent())
-      this.contentVersion = dataVersion()
-    } catch (error) {
-      if (rethrow) throw error
-      console.info('商品服务未启动，首页继续使用本地演示数据', error.errMsg || error.message)
+    const token = (this.switchToken || 0) + 1
+    this.switchToken = token
+    const activeIndex = TAB_KEYS.indexOf(tab)
+    if (this.data.activeIndex !== activeIndex) this.setData({ activeIndex })
+    let shown = false
+    const show = () => {
+      if (shown || token !== this.switchToken) return
+      shown = true
+      this.setData({ active: tab }, () => {
+        const left = this.view(leaving)
+        left?.viewHidden?.()
+        left?.leftFor?.(tab)
+        this.view(tab)?.viewShown?.()
+      })
     }
-  },
-  onRefresh() {
-    refreshFromServer(this, async () => {
-      if (dataVersion() !== this.contentVersion) await this.loadRemoteContent({ rethrow: true })
-    })
-  },
-  applyHomeContent(content = {}) {
-    const remoteCategories = Array.isArray(content.categories) ? content.categories : []
-    const storeSettings = content.storeSettings || defaultStoreSettings
-    const heroImages = storeSettings.homeHeroImages?.length ? storeSettings.homeHeroImages : ['/assets/hero.jpg']
-    const currentHeroImages = this.data.heroImages || []
-    const sameHeroImages = currentHeroImages.length === heroImages.length
-      && currentHeroImages.every((url, index) => url === heroImages[index])
-    const patch = {
-      storeName: storeSettings.storeName,
-      storeIcon: storeSettings.storeIcon,
-      settings: storeSettings,
-      homeReady: true,
-      categories: remoteCategories.length ? remoteCategories : this.data.categories
+    const prepare = () => {
+      setTimeout(show, PREPARE_TIMEOUT_MS)
+      const view = this.view(tab)
+      if (view?.prepareShow) view.prepareShow(show)
+      else show()
     }
-    if (!sameHeroImages) {
-      this.clearHeroPrefetchTimer()
-      patch.heroImages = heroImages
-      patch.heroSlides = heroImages.map((url, index) => ({ url, src: index === 0 ? url : '' }))
-      patch.heroCurrent = 0
-    }
-    this.setData(patch, () => {
-      if (!sameHeroImages) this.scheduleHeroNeighbors(0)
-    })
-    getApp().globalData.brandName = storeSettings.storeName
+    if (this.data.created[tab]) prepare()
+    else this.setData({ [`created.${tab}`]: true }, prepare)
   },
-  onHeroChange(e) {
-    const heroCurrent = Number(e.detail.current) || 0
-    this.setData({ heroCurrent })
-    this.loadHeroNeighbors(heroCurrent)
-  },
-  clearHeroPrefetchTimer() {
-    if (!this.heroPrefetchTimer) return
-    clearTimeout(this.heroPrefetchTimer)
-    this.heroPrefetchTimer = null
-  },
-  scheduleHeroNeighbors(index) {
-    this.clearHeroPrefetchTimer()
-    this.heroPrefetchTimer = setTimeout(() => {
-      this.heroPrefetchTimer = null
-      this.loadHeroNeighbors(index)
-    }, 350)
-  },
-  loadHeroNeighbors(index) {
-    const slides = this.data.heroSlides || []
-    const count = slides.length
-    if (count < 2) return
-    const indexes = [index, (index + 1) % count, (index - 1 + count) % count]
-    const patch = {}
-    indexes.forEach(slideIndex => {
-      const slide = slides[slideIndex]
-      if (slide && !slide.src) patch[`heroSlides[${slideIndex}].src`] = slide.url
-    })
-    if (Object.keys(patch).length) this.setData(patch)
-  },
-  openSearch() {
-    wx.navigateTo({ url: '/pages/search/search' })
-  },
-  openImageSearch() {
-    if (this.data.imageRecognizing) return
-    wx.showActionSheet({
-      itemList: ['拍照识别产品', '从相册选择图片'],
-      success: result => this.chooseProductImage(result.tapIndex === 0 ? 'camera' : 'album')
-    })
-  },
-  chooseProductImage(source) {
-    wx.chooseMedia({
-      count: 1,
-      mediaType: ['image'],
-      sourceType: [source],
-      camera: 'back',
-      success: result => {
-        const path = result.tempFiles?.[0]?.tempFilePath
-        if (path) this.prepareProductImage(path)
-      }
-    })
-  },
-  prepareProductImage(path) {
-    wx.compressImage({
-      src: path,
-      quality: 72,
-      success: result => this.runImageRecognition(result.tempFilePath || path),
-      fail: () => this.runImageRecognition(path)
-    })
-  },
-  runImageRecognition(path) {
-    this.setData({ imageRecognizing: true })
-    wx.showLoading({ title: '正在识别商品', mask: true })
-    wx.getFileSystemManager().readFile({
-      filePath: path,
-      encoding: 'base64',
-      success: async result => {
-        try {
-          const lowerPath = path.toLowerCase()
-          const mime = lowerPath.endsWith('.png') ? 'image/png' : lowerPath.endsWith('.webp') ? 'image/webp' : 'image/jpeg'
-          const matches = await recognizeProductImage(`data:${mime};base64,${result.data}`, 20)
-          if (!matches.length) throw new Error('暂未识别到相似商品')
-          setCategoryIntent({
-            category: '拍图识别结果',
-            type: 'image',
-            productIds: matches.map(item => Number(item.id))
-          })
-          wx.switchTab({ url: '/pages/category/category' })
-        } catch (error) {
-          wx.showToast({ title: error.message || '图片识别失败，请重试', icon: 'none', duration: 2600 })
-        } finally {
-          wx.hideLoading()
-          this.setData({ imageRecognizing: false })
-        }
-      },
-      fail: () => {
-        wx.hideLoading()
-        this.setData({ imageRecognizing: false })
-        wx.showToast({ title: '图片读取失败，请重新拍摄', icon: 'none' })
-      }
-    })
-  },
-  goCategory(e) {
-    const name = e.currentTarget.dataset.name
-    const type = e.currentTarget.dataset.type || 'normal'
-    setCategoryIntent({
-      category: name,
-      type,
-      keyword: '',
-      productIds: []
-    })
-    wx.switchTab({ url: '/pages/category/category' })
-  },
-  goAll() {
-    setCategoryIntent({
-      category: '全部商品',
-      type: 'all',
-      keyword: '',
-      productIds: []
-    })
-    wx.switchTab({ url: '/pages/category/category' })
-  },
-  goProduct(e) {
-    wx.navigateTo({ url: `/pages/product/product?id=${e.currentTarget.dataset.id}` })
+  view(tab) {
+    return tab ? this.selectComponent(`#${tab}-view`) : null
   },
   onShareAppMessage() {
-    return appShare({
-      title: this.data.storeName || appName(),
-      path: '/pages/home/home',
-      imageUrl: this.data.heroImages[0] || this.data.storeIcon
-    })
+    return this.view(this.data.active)?.shareMessage?.() || appShare({ title: appName(), path: '/pages/home/home' })
   },
   onShareTimeline() {
-    return timelineShare({
-      title: this.data.storeName || appName(),
-      imageUrl: this.data.heroImages[0] || this.data.storeIcon
-    })
+    return this.view(this.data.active)?.shareTimeline?.() || timelineShare({ title: appName() })
   },
   onAddToFavorites() {
-    return favoriteShare({
-      title: this.data.storeName || appName(),
-      imageUrl: this.data.heroImages[0] || this.data.storeIcon
-    })
+    return this.view(this.data.active)?.favorite?.() || favoriteShare({ title: appName() })
   }
 })
