@@ -12,8 +12,11 @@ const publicImagesDir = join(serverDir, 'public', 'images')
 const dashScope = String(process.env.IMAGE_RERANK_PROVIDER || '').trim().toLowerCase() === 'dashscope'
 const baseUrl = String(process.env.IMAGE_RERANK_BASE_URL || (dashScope ? 'https://dashscope.aliyuncs.com/compatible-mode' : '')).trim().replace(/\/+$/u, '')
 const apiKey = String(process.env.IMAGE_RERANK_API_KEY || (dashScope ? process.env.VISUAL_EMBEDDING_API_KEY : '') || '').trim()
-const model = String(process.env.IMAGE_RERANK_MODEL || (dashScope ? 'qwen3-vl-plus' : 'gemini-3.7-flash')).trim()
-const candidateLimit = Math.max(2, Math.min(20, Number(process.env.IMAGE_RERANK_CANDIDATES) || 10))
+const model = String(process.env.IMAGE_RERANK_MODEL || (dashScope ? 'qwen3.6-plus' : 'gemini-3.7-flash')).trim()
+// Retrieval's first 8 products at 640 px: on 120 test photos this picked the right product more
+// often than 20 at 384 px (33 vs 28); the review's corrections almost all come from places 2-5.
+const candidateLimit = Math.max(2, Math.min(20, Number(process.env.IMAGE_RERANK_CANDIDATES) || 8))
+const imageSize = Math.max(256, Math.min(1024, Number(process.env.IMAGE_RERANK_IMAGE_SIZE) || 640))
 // When retrieval puts one product clearly ahead (usually a sister shot of the same garment
 // is in the library), the review was more often wrong than right; it is asked only when
 // the first two retrieval scores are within this lead.
@@ -71,7 +74,7 @@ async function compactImageDataUrl(input) {
   const buffer = await sharp(input, { failOn: 'none', limitInputPixels: 60_000_000 })
     .rotate()
     .flatten({ background: '#ffffff' })
-    .resize({ width: 384, height: 384, fit: 'inside', withoutEnlargement: true })
+    .resize({ width: imageSize, height: imageSize, fit: 'inside', withoutEnlargement: true })
     .jpeg({ quality: 76, chromaSubsampling: '4:2:0' })
     .toBuffer()
   return `data:image/jpeg;base64,${buffer.toString('base64')}`
@@ -166,7 +169,7 @@ function saveCache(key, value) {
 }
 
 function localResult(matches, reason) {
-  const visual = matches.some(match => match.recognitionMethod === 'qwen3-vl-embedding')
+  const visual = matches.some(match => match.recognitionMethod === 'visual-embedding')
   return { matches, used: false, method: visual ? 'visual' : 'local', reason }
 }
 
@@ -253,7 +256,9 @@ export async function rerankProductImageMatches(dataUrl, matches = []) {
           model,
           temperature: 0,
           // 百炼 compatible mode takes max_tokens; OpenAI-style APIs take max_completion_tokens.
-          ...(dashScope ? { max_tokens: 600 } : { max_completion_tokens: 1_100 }),
+          // The newer Qwen models think before answering unless told not to; the review needs a
+          // quick answer.
+          ...(dashScope ? { max_tokens: 600, enable_thinking: false } : { max_completion_tokens: 1_100 }),
           response_format: { type: 'json_object' },
           messages: [{ role: 'user', content }]
         })
@@ -271,7 +276,7 @@ export async function rerankProductImageMatches(dataUrl, matches = []) {
       matches: applyImageRerank(matches, candidates, rerank),
       used: rerank.ranking.length > 0,
       method: rerank.ranking.length > 0
-        ? (matches.some(match => match.recognitionMethod === 'qwen3-vl-embedding') ? 'visual-rag' : 'hybrid')
+        ? (matches.some(match => match.recognitionMethod === 'visual-embedding') ? 'visual-rag' : 'hybrid')
         : 'local',
       model,
       elapsedMs: Date.now() - startedAt,

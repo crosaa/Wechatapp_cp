@@ -10,7 +10,8 @@ const indexPath = resolve(process.env.VISUAL_EMBEDDING_INDEX_PATH || join(dataDi
 const baseUrl = String(process.env.VISUAL_EMBEDDING_BASE_URL || 'https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding').trim()
 const apiKey = String(process.env.VISUAL_EMBEDDING_API_KEY || '').trim()
 const model = String(process.env.VISUAL_EMBEDDING_MODEL || 'qwen3-vl-embedding').trim()
-const dimensions = [256, 512, 768, 1024, 1536, 2048, 2560].includes(Number(process.env.VISUAL_EMBEDDING_DIMENSIONS))
+// qwen3-vl-embedding: 256-2560; tongyi-embedding-vision-plus-2026-03-06: up to 1152.
+const dimensions = [256, 512, 768, 1024, 1152, 1536, 2048, 2560].includes(Number(process.env.VISUAL_EMBEDDING_DIMENSIONS))
   ? Number(process.env.VISUAL_EMBEDDING_DIMENSIONS)
   : 512
 const batchSize = Math.max(1, Math.min(10, Number(process.env.VISUAL_EMBEDDING_BATCH_SIZE) || 10))
@@ -135,7 +136,8 @@ async function requestEmbeddings(images, attempt = 0) {
         parameters: {
           dimension: dimensions,
           instruct: instruction,
-          enable_fusion: false
+          // Only qwen3-vl-embedding fuses the contents of one request unless told not to.
+          ...(model.startsWith('qwen3-vl-embedding') ? { enable_fusion: false } : {})
         }
       })
     })
@@ -325,11 +327,14 @@ async function queryEmbedding(input) {
 // shots share background and lighting, plain garments look alike), so they top the
 // ranking for unrelated queries. A picture's "hub" value is its mean similarity to its
 // closest pictures of other products; it is subtracted from the query similarity, and
-// warehouse photos get a small extra penalty. On the shop's own pictures this nearly
-// doubled first-place hits for photos matched against catalog pictures (9.5% -> 17.4%).
+// warehouse photos get an extra penalty. On the shop's own pictures this nearly doubled
+// first-place hits for photos matched against catalog pictures (9.5% -> 17.4%). The penalty
+// suits the embedding model: 0.03 for qwen3-vl-embedding; with tongyi-embedding-vision-plus a
+// larger one trades a little on warehouse photos for much better customer photos.
 const HUB_NEIGHBOURS = 10
 const HUB_WEIGHT = 0.75
-const REAL_PHOTO_PENALTY = 0.03
+const realPhotoPenaltySetting = String(process.env.VISUAL_EMBEDDING_REAL_PHOTO_PENALTY ?? '').trim()
+const REAL_PHOTO_PENALTY = realPhotoPenaltySetting !== '' && Number.isFinite(Number(realPhotoPenaltySetting)) ? Number(realPhotoPenaltySetting) : 0.03
 // Correcting only each query's closest pictures ranks exactly like correcting all of them.
 const HUB_CANDIDATES = 200
 const hubPath = indexPath.replace(/\.json$/u, '') + '-hub.json'
@@ -476,7 +481,7 @@ export async function retrieveVisualEmbeddingProducts(input, products, limit = 3
       confidence: Math.max(0, Math.min(100, Math.round((cosine + 1) * 50))),
       matchedColor: item.colors?.[0] || '',
       referenceType: item.roles?.[0] || '',
-      recognitionMethod: 'qwen3-vl-embedding',
+      recognitionMethod: 'visual-embedding',
       basis: { embedding: Math.round(cosine * 100) }
     }))
 }
