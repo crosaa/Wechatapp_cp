@@ -10,6 +10,7 @@ import sharp from 'sharp'
 import XLSX from 'xlsx'
 import { ensureImageSearchIndex, ensureVisualImageSearchIndex, recognizeProductImage } from './image-recognition.mjs'
 import { imageRerankerStatus, rerankProductImageMatches } from './image-reranker.mjs'
+import { keepRecognitionCase, pruneRecognitionCases, recognitionCasesStatus } from './recognition-cases.mjs'
 import { visualEmbeddingStatus } from './visual-embedding.mjs'
 import {
   createAdminUser,
@@ -1298,6 +1299,8 @@ async function handleApi(req, res, url) {
     const body = await readJson(req, 12 * 1024 * 1024)
     const localMatches = await recognizeProductImage(body.dataUrl, products, body.limit)
     const recognition = await rerankProductImageMatches(body.dataUrl, localMatches)
+    // Some real recognitions are kept to improve recognition with (server/recognition-cases.mjs).
+    keepRecognitionCase({ dataUrl: body.dataUrl, retrieved: localMatches, matches: recognition.matches, recognition })
     json(res, 200, {
       data: recognition.matches,
       total: recognition.matches.length,
@@ -1760,6 +1763,9 @@ server.listen(port, '127.0.0.1', () => {
     ? `视觉向量检索：${visualEmbedding.model}，${visualEmbedding.dimensions}维，已索引 ${visualEmbedding.indexedImages} 张商品图片`
     : '视觉向量检索：未配置，使用传统本地检索')
   console.log(reranker.configured ? `商品图片智能复核：${reranker.model}，候选 ${reranker.candidateLimit} 款，检索领先 ${reranker.skipLead} 以上时不复核` : '商品图片智能复核：未配置，使用本地识别')
+  pruneRecognitionCases()
+  const cases = recognitionCasesStatus()
+  console.log(cases.enabled ? `拍图识别案例：已保存 ${cases.count} 条，最多 ${cases.maxCases} 条、保留 ${cases.maxDays} 天，有把握的按 ${Math.round(cases.sureShare * 100)}% 抽样` : '拍图识别案例：不保存')
   if (!process.env.ADMIN_PASSWORD) console.log('本地演示账号：admin / admin123（正式部署前必须修改）')
 })
 

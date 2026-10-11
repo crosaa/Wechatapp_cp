@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -850,6 +850,18 @@ try {
   assert.equal(recognized.body.data[0].id, created.body.data.id)
   assert.ok(recognized.body.data[0].confidence >= 99)
   assert.equal(recognized.body.recognition.method, 'local')
+  // An unsure recognition is kept as a case: its photo and what recognition answered.
+  const casesDir = join(workspace, 'data', 'recognition-cases')
+  for (let attempt = 0; attempt < 30 && !(existsSync(casesDir) && readdirSync(casesDir).some(name => name.endsWith('.json'))); attempt += 1) {
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+  const caseFiles = readdirSync(casesDir).filter(name => name.endsWith('.json'))
+  assert.equal(caseFiles.length, 1)
+  assert.match(caseFiles[0], /^\d{8}-\d{6}-[0-9a-f]{6}\.json$/)
+  const keptCase = JSON.parse(readFileSync(join(casesDir, caseFiles[0]), 'utf8'))
+  assert.equal(keptCase.results[0].id, created.body.data.id)
+  assert.equal(keptCase.sure, false)
+  assert.ok(existsSync(join(casesDir, keptCase.photo)))
 
   const inventoryWorkbook = XLSX.utils.book_new()
   const inventorySheet = XLSX.utils.aoa_to_sheet([
