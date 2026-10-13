@@ -415,8 +415,18 @@ function hubValue(index, itemIndex) {
   return value
 }
 
+// How well a picture shows the whole garment: product, colour and warehouse pictures do;
+// posters mostly do; detail-page pictures are often close-ups (a zip, a collar, a back view).
+function wholeGarmentLevel(item) {
+  const roles = item.roles || []
+  if (roles.some(role => role === 'main' || role === 'color' || role === 'real')) return 2
+  return roles.includes('detail') ? 0 : 1
+}
+
 // Products ranked for a query vector: cosine to every indexed picture of the given products,
-// the hubness correction for the closest ones, then each product's best picture.
+// the hubness correction for the closest ones, then each product's best picture. Each product
+// also gets `wholeItem`, its best picture among those that show the whole garment, for the
+// vision review: shown a close-up, the review cannot compare the garment's construction.
 // `keep(item, itemIndex, cosine)` can leave pictures out (the recognition evaluation leaves
 // out the query picture and its copies); `correct: false` gives the plain cosine ranking.
 export async function rankProductsForVector(query, productIds, { keep = () => true, correct = true } = {}) {
@@ -436,6 +446,7 @@ export async function rankProductsForVector(query, productIds, { keep = () => tr
     scored[position].hub = hubValue(index, scored[position].itemIndex)
   }
   const bestByProduct = new Map()
+  const wholeByProduct = new Map()
   scored.forEach((entry, position) => {
     // Pictures beyond the corrected ones keep their cosine order, below all corrected ones.
     const score = position < corrected
@@ -444,8 +455,13 @@ export async function rankProductsForVector(query, productIds, { keep = () => tr
     const productId = Number(entry.item.productId)
     const current = bestByProduct.get(productId)
     if (!current || score > current.score) bestByProduct.set(productId, { ...entry, productId, score })
+    const level = wholeGarmentLevel(entry.item)
+    const whole = wholeByProduct.get(productId)
+    if (!whole || level > whole.level || (level === whole.level && score > whole.score)) wholeByProduct.set(productId, { item: entry.item, level, score })
   })
-  return [...bestByProduct.values()].sort((left, right) => right.score - left.score)
+  return [...bestByProduct.values()]
+    .map(entry => ({ ...entry, wholeItem: wholeByProduct.get(entry.productId)?.item || entry.item }))
+    .sort((left, right) => right.score - left.score)
 }
 
 // The indexed pictures with their vectors, for the recognition evaluation script.
@@ -467,13 +483,15 @@ export async function retrieveVisualEmbeddingProducts(input, products, limit = 3
   return ranked
     .slice(0, Math.max(1, Math.min(50, Number(limit) || 30)))
     .map(entry => ({ ...entry, product: productById.get(entry.productId) }))
-    .map(({ item, product, cosine, score }) => ({
+    .map(({ item, wholeItem, product, cosine, score }) => ({
       id: product.id,
       name: product.name,
       code: product.code,
       category: product.category,
       categories: product.categories || [],
       image: item.url || product.images?.[0] || '',
+      // The picture the vision review is shown (see rankProductsForVector).
+      wholeImage: wholeItem?.url || item.url || product.images?.[0] || '',
       score: Number(cosine.toFixed(4)),
       // Ranking score after the correction; the lead of the first product over the second
       // decides whether the vision review is asked.

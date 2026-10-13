@@ -17,6 +17,10 @@ const model = String(process.env.IMAGE_RERANK_MODEL || (dashScope ? 'qwen3.6-plu
 // often than 20 at 384 px (33 vs 28); the review's corrections almost all come from places 2-5.
 const candidateLimit = Math.max(2, Math.min(20, Number(process.env.IMAGE_RERANK_CANDIDATES) || 8))
 const imageSize = Math.max(256, Math.min(1024, Number(process.env.IMAGE_RERANK_IMAGE_SIZE) || 640))
+// The candidate pictures the review is shown. whole: each product's best-matching picture of the
+// whole garment (retrieval's `wholeImage`); best: retrieval's best-matching picture, which is often
+// a detail-page close-up; both: the two, when they differ.
+const pictureChoice = ['whole', 'best', 'both'].find(value => value === String(process.env.IMAGE_RERANK_PICTURES || '').trim().toLowerCase()) || 'whole'
 // When retrieval puts one product clearly ahead (usually a sister shot of the same garment
 // is in the library), the review was more often wrong than right; it is asked only when
 // the first two retrieval scores are within this lead.
@@ -168,6 +172,13 @@ function saveCache(key, value) {
   while (cache.size > cacheLimit) cache.delete(cache.keys().next().value)
 }
 
+function candidatePictures(match) {
+  const whole = match.wholeImage || match.image
+  if (pictureChoice === 'best') return [match.image]
+  if (pictureChoice === 'whole') return [whole]
+  return [...new Set([whole, match.image])]
+}
+
 function localResult(matches, reason) {
   const visual = matches.some(match => match.recognitionMethod === 'visual-embedding')
   return { matches, used: false, method: visual ? 'visual' : 'local', reason }
@@ -181,7 +192,7 @@ function reviewPrompt(queryImage, candidates) {
     {
       type: 'text',
       text: [
-        '你是服装批发店的商品识别助手。第一张是客户拍的照片，可能在仓库、门店或穿在身上拍的，背景、光线、角度、折叠方式、衣架、包装袋都可能和商品图不同。后面是店里商品库的候选商品，每个候选给一张图。',
+        `你是服装批发店的商品识别助手。第一张是客户拍的照片，可能在仓库、门店或穿在身上拍的，背景、光线、角度、折叠方式、衣架、包装袋都可能和商品图不同。后面是店里商品库的候选商品，每个候选给${pictureChoice === 'both' ? '一到两张图（整件衣服，以及和客户照片最像的那张，可能是局部细节）' : '一张图'}。`,
         '任务：找出和客户照片是同一款的候选商品。',
         '按重要程度比较：1) 品类和版型（冲锋衣、夹克、马甲、卫衣、T恤、衬衫、裤子、套装等）；2) 领型、帽子、门襟（拉链或纽扣）；3) 口袋的数量、位置和形状；4) 袖口、下摆、松紧、拼接色块、分割线、反光条；5) 印花、刺绣、标志的位置和形状；6) 面料纹理和厚薄。',
         '同一款商品通常有好几个颜色，候选图的颜色和客户照片不同也可能是同一款，不要只因为颜色不同就排除；结构细节都一致时，颜色只作参考。',
@@ -197,7 +208,7 @@ function reviewPrompt(queryImage, candidates) {
       type: 'text',
       text: `候选 ${candidate.label}：款号 ${promptText(match.code, 50)}，名称 ${promptText(match.name, 80)}，分类 ${promptText(match.category, 60)}`
     })
-    content.push({ type: 'image_url', image_url: { url: candidate.image } })
+    for (const image of candidate.images) content.push({ type: 'image_url', image_url: { url: image } })
   }
   content.push({
     type: 'text',
@@ -218,7 +229,7 @@ export async function rerankProductImageMatches(dataUrl, matches = []) {
   const cacheKey = createHash('sha256')
     .update(String(dataUrl || ''))
     .update('\u0000')
-    .update(selected.map(match => `${match.id}:${match.image}`).join('|'))
+    .update(selected.map(match => `${match.id}:${candidatePictures(match).join(',')}`).join('|'))
     .digest('hex')
   const saved = cachedResult(cacheKey)
   if (saved) return { ...saved, cached: true }
@@ -229,14 +240,13 @@ export async function rerankProductImageMatches(dataUrl, matches = []) {
     const queryImage = await compactImageDataUrl(decodeDataUrl(dataUrl))
     const candidates = []
     for (const match of selected) {
-      try {
-        const input = await candidateImageInput(match.image)
-        candidates.push({
-          label: String.fromCharCode(65 + candidates.length),
-          match,
-          image: await compactImageDataUrl(input)
-        })
-      } catch {}
+      const images = []
+      for (const url of candidatePictures(match)) {
+        try {
+          images.push(await compactImageDataUrl(await candidateImageInput(url)))
+        } catch {}
+      }
+      if (images.length) candidates.push({ label: String.fromCharCode(65 + candidates.length), match, images })
     }
     if (candidates.length < 2) return localResult(matches, 'candidate-images-unavailable')
 
@@ -304,6 +314,7 @@ export function imageRerankerStatus() {
     configured: configured(),
     model: configured() ? model : '',
     candidateLimit,
+    pictures: pictureChoice,
     skipLead,
     activeRequests,
     circuitOpen: Date.now() < circuitOpenUntil

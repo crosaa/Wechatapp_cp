@@ -1762,7 +1762,7 @@ server.listen(port, '127.0.0.1', () => {
   console.log(visualEmbedding.configured
     ? `视觉向量检索：${visualEmbedding.model}，${visualEmbedding.dimensions}维，已索引 ${visualEmbedding.indexedImages} 张商品图片`
     : '视觉向量检索：未配置，使用传统本地检索')
-  console.log(reranker.configured ? `商品图片智能复核：${reranker.model}，候选 ${reranker.candidateLimit} 款，检索领先 ${reranker.skipLead} 以上时不复核` : '商品图片智能复核：未配置，使用本地识别')
+  console.log(reranker.configured ? `商品图片智能复核：${reranker.model}，候选 ${reranker.candidateLimit} 款（${{ whole: '整件衣服图', best: '最像的图', both: '整件衣服图和最像的图' }[reranker.pictures]}），检索领先 ${reranker.skipLead} 以上时不复核` : '商品图片智能复核：未配置，使用本地识别')
   pruneRecognitionCases()
   const cases = recognitionCasesStatus()
   console.log(cases.enabled ? `拍图识别案例：已保存 ${cases.count} 条，最多 ${cases.maxCases} 条、保留 ${cases.maxDays} 天，有把握的按 ${Math.round(cases.sureShare * 100)}% 抽样` : '拍图识别案例：不保存')

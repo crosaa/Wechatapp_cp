@@ -82,7 +82,7 @@
 
 正式环境当前使用 `https://cpminiapp.xinghaiapp.top`：SQLite 数据库与全部商品图片均保存在自有服务器，微信公众平台请求域名也使用该域名。上线维护时需要继续执行强管理密码、固定会话密钥和定期备份。
 
-图片向量召回与智能复核都只在后端启用，密钥不能写入小程序或提交到 Git。配置项见 `deploy/cpminiapp.env.example`。正式链路使用百炼 `tongyi-embedding-vision-plus-2026-03-06` 1152维向量召回并做相似度校正（仓库实拍图额外扣 0.12，`VISUAL_EMBEDDING_REAL_PHOTO_PENALTY`）；检索第一名领先第二名不足 0.03（`IMAGE_RERANK_SKIP_LEAD`）时，再用 `qwen3.6-plus`（关闭深度思考）复核前 8 个候选（640 像素），复核和向量检索共用同一个百炼密钥。在店里 120 张测试图上，第一名正确的从 34 张（`qwen3-vl-embedding` + `qwen-vl-max`，后者已于 2026-10-10 下线）提高到 45 张。任何一层超时、繁忙或额度不足都会自动降级；部分真实识别会保存为案例（`DATA_DIR/recognition-cases`：缩小的照片和当时的识别结果，没把握的全存、有把握的抽样，最多 400 条、保留 60 天），以后据此改进识别；复核出错时服务日志会写明原因（例如 HTTP 401 密钥失效），方便及时发现。
+图片向量召回与智能复核都只在后端启用，密钥不能写入小程序或提交到 Git。配置项见 `deploy/cpminiapp.env.example`。正式链路使用百炼 `tongyi-embedding-vision-plus-2026-03-06` 1152维向量召回并做相似度校正（仓库实拍图额外扣 0.12，`VISUAL_EMBEDDING_REAL_PHOTO_PENALTY`）；检索第一名领先第二名不足 0.03（`IMAGE_RERANK_SKIP_LEAD`）时，再用 `qwen3.6-plus`（关闭深度思考）复核前 8 个候选（640 像素），复核和向量检索共用同一个百炼密钥。复核时每个候选给的是它和客户照片最像的整件衣服图（商品图、颜色图或实拍图，`IMAGE_RERANK_PICTURES=whole`），不给详情页的局部特写：只看到拉链、领口或背影时，模型没法比较衣服结构。在店里 120 张测试图上，第一名正确的从 34 张（`qwen3-vl-embedding` + `qwen-vl-max`，后者已于 2026-10-10 下线）提高到 45 张。任何一层超时、繁忙或额度不足都会自动降级；部分真实识别会保存为案例（`DATA_DIR/recognition-cases`：缩小的照片和当时的识别结果，没把握的全存、有把握的抽样，最多 400 条、保留 60 天），以后据此改进识别；复核出错时服务日志会写明原因（例如 HTTP 401 密钥失效），方便及时发现。
 
 详细设计见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 

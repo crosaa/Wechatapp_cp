@@ -77,6 +77,7 @@ export function keepRecognitionCase({ dataUrl, retrieved = [], matches = [], rec
       code: match.code || '',
       name: match.name || '',
       image: match.image || '',
+      wholeImage: match.wholeImage || '',
       score: match.score ?? null,
       retrievalScore: match.retrievalScore ?? null,
       method: match.recognitionMethod || ''
