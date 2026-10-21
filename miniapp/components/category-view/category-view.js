@@ -221,6 +221,8 @@ Component({
         this.resetCategoryState(callback)
         return
       }
+      // A 拍图识别 result opens on the colour in the photo (see goProduct).
+      this.imageMatchColors = intent.type === 'image' && intent.productColors ? intent.productColors : {}
       const intentKeyword = typeof intent.keyword === 'string' ? intent.keyword : (intent.type === 'image' ? '' : this.data.keyword)
       const isKeywordSearch = intentKeyword.trim().length > 0
       this.applyProductState({
@@ -541,8 +543,9 @@ Component({
       app.globalData.productPreview = warmedProduct || summary || null
       app.globalData.productPreviewReady = Boolean(warmedProduct)
       app.globalData.productWarmRequest = { id, promise: warmPromise }
+      const color = this.data.selectedType === 'image' ? this.imageMatchColors?.[id] : ''
       wx.navigateTo({
-        url: `/pages/product/product?id=${id}`,
+        url: `/pages/product/product?id=${id}${color ? `&color=${encodeURIComponent(color)}` : ''}`,
         fail: () => { this.productNavigating = false }
       })
     },

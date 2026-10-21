@@ -18,7 +18,6 @@ const FEATURE_SIZE = 24
 const GRID_SIZE = 12
 const PATCH_SIZE = 8
 const PATCH_GRID_SIZE = 4
-const MAX_IMAGES_PER_PRODUCT = 18
 let cachedIndex = null
 let refreshPromise = null
 const decodedFeatureCache = new WeakMap()
@@ -198,7 +197,16 @@ export async function createImageFeature(input) {
   }
 }
 
-function candidateEntries(product) {
+// How many pictures of a product recognition uses. The vision embedding index takes more: the
+// photos people take in the shop look most like its warehouse photos, and on 43 real recognitions
+// the shop confirmed (2026-10-21) taking up to 15 of them and every colour put the right product in
+// the first three results far more often. The local fallback index keeps the smaller selection.
+const PICTURE_LIMITS = {
+  visual: { real: 15, colors: Infinity, galleryPerColor: 3, total: 40 },
+  local: { real: 5, colors: 6, galleryPerColor: 2, total: 18 }
+}
+
+function candidateEntries(product, limits = PICTURE_LIMITS.local) {
   const entries = new Map()
   const add = (url, role, color = '') => {
     const value = String(url || '').trim()
@@ -211,14 +219,14 @@ function candidateEntries(product) {
 
   add(product.posterImage, 'poster')
   for (const url of (product.images || []).slice(0, 4)) add(url, 'main')
-  for (const item of (product.realImages || []).slice(0, 5)) add(typeof item === 'string' ? item : item?.url, 'real')
-  for (const [color, url] of Object.entries(product.colorImages || {}).slice(0, 6)) add(url, 'color', color)
+  for (const item of (product.realImages || []).slice(0, limits.real)) add(typeof item === 'string' ? item : item?.url, 'real')
+  for (const [color, url] of Object.entries(product.colorImages || {}).slice(0, limits.colors)) add(url, 'color', color)
   for (const url of (product.detailImages || []).slice(0, 3)) add(url, 'detail')
   for (const [color, urls] of Object.entries(product.colorGalleries || {})) {
-    for (const url of (Array.isArray(urls) ? urls : []).slice(0, 2)) add(url, 'color', color)
+    for (const url of (Array.isArray(urls) ? urls : []).slice(0, limits.galleryPerColor)) add(url, 'color', color)
   }
 
-  return [...entries.values()].slice(0, MAX_IMAGES_PER_PRODUCT)
+  return [...entries.values()].slice(0, limits.total)
 }
 
 function loadIndex() {
@@ -235,7 +243,7 @@ function loadIndex() {
 export async function buildImageSearchIndex(products, { force = false, onProgress = null } = {}) {
   const current = loadIndex()
   const saved = new Map((current.items || []).map(item => [`${item.productId}|${item.url}`, item]))
-  const candidates = products.flatMap(candidateEntries)
+  const candidates = products.flatMap(product => candidateEntries(product))
   const items = []
   let cursor = 0
   let completed = 0
@@ -273,7 +281,7 @@ export async function buildImageSearchIndex(products, { force = false, onProgres
 }
 
 export function ensureImageSearchIndex(products) {
-  const expectedKeys = new Set(products.flatMap(candidateEntries).map(item => `${item.productId}|${item.url}`))
+  const expectedKeys = new Set(products.flatMap(product => candidateEntries(product)).map(item => `${item.productId}|${item.url}`))
   const current = loadIndex()
   const currentKeys = new Set(current.items.map(item => `${item.productId}|${item.url}`))
   if (currentKeys.size === expectedKeys.size && [...expectedKeys].every(key => currentKeys.has(key))) return Promise.resolve(current)
@@ -395,7 +403,7 @@ async function recognizeProductImageLegacy(buffer, products, limit = 12) {
 }
 
 function visualCandidates(products) {
-  return products.flatMap(candidateEntries)
+  return products.flatMap(product => candidateEntries(product, PICTURE_LIMITS.visual))
 }
 
 export function buildVisualImageSearchIndex(products, options = {}) {

@@ -198,7 +198,9 @@ Component({
             setCategoryIntent({
               category: '拍图识别结果',
               type: 'image',
-              productIds: matches.map(item => Number(item.id))
+              productIds: matches.map(item => Number(item.id)),
+              // The colour in the photo for each result, which the product opens on.
+              productColors: Object.fromEntries(matches.filter(item => item.matchedColor).map(item => [Number(item.id), item.matchedColor]))
             })
             this.triggerEvent('opentab', { tab: 'category' })
           } catch (error) {

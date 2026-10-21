@@ -14,7 +14,7 @@ function galleryImages(product, selected = '全部') {
   return selectedImages.map(item => ({
     ...item,
     displayUrl: thumbnailImage(item.url, 960, 'width'),
-    previewUrl: thumbnailImage(item.url, PREVIEW_IMAGE_SIZE, 'width')
+    previewUrl: thumbnailImage(item.url, PREVIEW_IMAGE_SIZE, 'width', 'jpg')
   }))
 }
 

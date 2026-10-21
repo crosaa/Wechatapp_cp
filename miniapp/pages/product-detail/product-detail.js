@@ -12,7 +12,7 @@ function buildDetailSlides(product) {
   return (product.detailImages || []).map(original => ({
     original,
     display: thumbnailImage(original, 960, 'width'),
-    preview: thumbnailImage(original, PREVIEW_IMAGE_SIZE, 'width')
+    preview: thumbnailImage(original, PREVIEW_IMAGE_SIZE, 'width', 'jpg')
   }))
 }
 
@@ -26,7 +26,7 @@ function detailState(product, detailSlides = buildDetailSlides(product)) {
     subtitle: product.subtitle || '',
     image,
     imageDisplay: thumbnailImage(image, 960, 'width'),
-    imagePreview: thumbnailImage(image, PREVIEW_IMAGE_SIZE, 'width'),
+    imagePreview: thumbnailImage(image, PREVIEW_IMAGE_SIZE, 'width', 'jpg'),
     detailText: product.detailText || '',
     detailImages,
     detailImageCount: detailSlides.length,

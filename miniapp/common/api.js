@@ -210,15 +210,17 @@ function absoluteImage(path) {
   return `${apiBase()}${path.startsWith('/') ? '' : '/'}${path}`
 }
 
-function thumbnailImage(path, size = 360, fit = 'inside') {
+// format 'jpg' is for full-screen previews: WeChat on PC forwards a WebP picture (the other
+// thumbnails) to a friend as a file instead of a picture.
+function thumbnailImage(path, size = 360, fit = 'inside', format = 'webp') {
   const source = String(path || '')
   if (!source) return ''
   const base = apiBase()
-  const thumbnailPath = source.startsWith('/api/product-thumbnail?')
-    ? source
-    : source.startsWith(`${base}/api/product-thumbnail?`)
-      ? source.slice(base.length)
-      : ''
+  const route = format === 'jpg' ? '/api/product-thumbnail.jpg' : '/api/product-thumbnail'
+  const relativeSource = source.startsWith(`${base}/`) ? source.slice(base.length) : source
+  const thumbnailPath = /^\/api\/product-thumbnail(\.jpg)?\?/.test(relativeSource)
+    ? relativeSource.replace(/^\/api\/product-thumbnail(\.jpg)?/, route)
+    : ''
   if (thumbnailPath) {
     let resized = /[?&]size=\d+/.test(thumbnailPath)
       ? thumbnailPath.replace(/([?&])size=\d+/, `$1size=${size}`)
@@ -227,14 +229,10 @@ function thumbnailImage(path, size = 360, fit = 'inside') {
     if (fit === 'width') resized += '&fit=width'
     return `${base}${resized}`
   }
-  const localPath = source.startsWith('/uploads/')
-    ? source
-    : source.startsWith(`${base}/uploads/`)
-      ? source.slice(base.length)
-      : ''
+  const localPath = relativeSource.startsWith('/uploads/') ? relativeSource : ''
   if (localPath) {
     const fitQuery = fit === 'width' ? '&fit=width' : ''
-    return `${base}/api/product-thumbnail?src=${encodeURIComponent(localPath)}&size=${size}${fitQuery}`
+    return `${base}${route}?src=${encodeURIComponent(localPath)}&size=${size}${fitQuery}`
   }
   return absoluteImage(source)
 }

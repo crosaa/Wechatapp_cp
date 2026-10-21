@@ -118,7 +118,8 @@ export function parseImageRerankResponse(content, allowedLabels = []) {
     uncertain: explicitlyUncertain,
     confidence: Math.max(0, Math.min(100, Math.round(Number(parsed.confidence) || 0))),
     reason: promptText(parsed.reason, 180),
-    matchedColor: promptText(parsed.matched_color || parsed.matchedColor, 60)
+    matchedColor: promptText(parsed.matched_color || parsed.matchedColor, 60),
+    bestColor: promptText(parsed.best_color || parsed.bestColor, 60)
   }
 }
 
@@ -149,10 +150,28 @@ export function applyImageRerank(matches, candidates, rerank) {
         ...match,
         aiConfidence: rerank.confidence,
         aiReason: rerank.reason,
-        matchedColor: rerank.matchedColor || match.matchedColor,
+        // matchedColor stays one of the product's colour names, which the mini program opens the
+        // product on: the one the review picked from the product's colours (best_color), else the
+        // one its own words for the colour (aiColor) name, else retrieval's.
+        aiColor: rerank.matchedColor,
+        matchedColor: Array.isArray(match.colors) && match.colors.includes(rerank.bestColor)
+          ? rerank.bestColor
+          : colourNamed(rerank.matchedColor, match.colors, match.matchedColor),
         recognitionMethod: 'ai-reranked'
       }
     : match)
+}
+
+// The product colour the review's words name: the one sharing the most colour characters with them
+// ("浅灰拼深蓝" names 中灰拼藏蓝 rather than 天空蓝拼藏蓝), when it clearly beats retrieval's choice;
+// otherwise retrieval's choice (its closest colour picture) stays.
+function colourNamed(words, colours, current = '') {
+  const characters = text => new Set([...String(text || '')].filter(character => !/[色款\s/+、，,拼和配与]/u.test(character)))
+  const said = characters(words)
+  if (!said.size || !Array.isArray(colours) || !colours.length) return current
+  const shared = colour => [...characters(colour)].filter(character => said.has(character)).length
+  const best = colours.reduce((top, colour) => (shared(colour) > shared(top) ? colour : top), colours[0])
+  return shared(best) >= 2 && shared(best) > shared(current) ? best : current
 }
 
 function cachedResult(key) {
@@ -206,13 +225,13 @@ function reviewPrompt(queryImage, candidates) {
     const match = candidate.match
     content.push({
       type: 'text',
-      text: `候选 ${candidate.label}：款号 ${promptText(match.code, 50)}，名称 ${promptText(match.name, 80)}，分类 ${promptText(match.category, 60)}`
+      text: `候选 ${candidate.label}：款号 ${promptText(match.code, 50)}，名称 ${promptText(match.name, 80)}，分类 ${promptText(match.category, 60)}${Array.isArray(match.colors) && match.colors.length ? `，颜色 ${promptText(match.colors.join('、'), 160)}` : ''}`
     })
     for (const image of candidate.images) content.push({ type: 'image_url', image_url: { url: image } })
   }
   content.push({
     type: 'text',
-    text: '先逐一排除结构明显不同的候选，再在剩下的里面挑最像的。只返回 JSON：{"best":"最像的候选字母","ranking":["最像的5个候选字母，从最像到较像"],"confidence":0到100的整数,"matched_color":"客户照片里衣服的颜色","reason":"一句话说明依据的结构细节","uncertain":true或false}。即使没有完全相同的款，也要给出最接近的 best，并把 uncertain 设为 true。'
+    text: '先逐一排除结构明显不同的候选，再在剩下的里面挑最像的。只返回 JSON：{"best":"最像的候选字母","ranking":["最像的5个候选字母，从最像到较像"],"confidence":0到100的整数,"matched_color":"客户照片里衣服的颜色","best_color":"best 候选的颜色里和客户照片一致的那个，从它列出的颜色里原样抄一个；都对不上就填空字符串","reason":"一句话说明依据的结构细节","uncertain":true或false}。即使没有完全相同的款，也要给出最接近的 best，并把 uncertain 设为 true。'
   })
   return content
 }

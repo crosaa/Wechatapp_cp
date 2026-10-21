@@ -14,13 +14,15 @@ const thumbnailsDir = join(uploadsDir, '.thumbnails')
 const sizeArgument = process.argv.find(value => value.startsWith('--size='))
 const concurrencyArgument = process.argv.find(value => value.startsWith('--concurrency='))
 const limitArgument = process.argv.find(value => value.startsWith('--limit='))
+// --format=jpg makes the JPG full-screen previews (the server's /api/product-thumbnail.jpg).
+const format = process.argv.find(value => value.startsWith('--format='))?.split('=')[1] === 'jpg' ? 'jpg' : 'webp'
 const requestedSize = Number(sizeArgument?.split('=')[1] || 2000)
 // 960 is the display size used by the mini program; 1600/2000 are the tap-to-zoom previews.
 const allowedSizes = new Set([960, 1600, 2000])
 const size = allowedSizes.has(requestedSize) ? requestedSize : 2000
 const concurrency = Math.min(8, Math.max(1, Number(concurrencyArgument?.split('=')[1] || 2)))
 const limit = Math.max(0, Number(limitArgument?.split('=')[1] || 0))
-const quality = size >= 1600 ? 86 : 76
+const quality = format === 'jpg' ? (size >= 1600 ? 88 : 80) : (size >= 1600 ? 86 : 76)
 
 function uploadPathFromValue(value) {
   const text = String(value || '').trim()
@@ -54,7 +56,7 @@ function thumbnailJob(uploadPath) {
   const hash = createHash('sha1').update(relative).digest('hex')
   return {
     sourcePath,
-    thumbnailPath: join(thumbnailsDir, `${hash}-${size}-width.webp`)
+    thumbnailPath: join(thumbnailsDir, `${hash}-${size}-width.${format}`)
   }
 }
 
@@ -62,7 +64,7 @@ mkdirSync(thumbnailsDir, { recursive: true })
 const uploadPaths = [...collectUploadPaths([listProducts(), getStoreSettings()])]
 const jobs = uploadPaths.map(thumbnailJob).filter(Boolean).slice(0, limit || undefined)
 let cursor = 0
-const summary = { size, quality, concurrency, discovered: uploadPaths.length, processed: jobs.length, created: 0, skipped: 0, failed: 0 }
+const summary = { size, format, quality, concurrency, discovered: uploadPaths.length, processed: jobs.length, created: 0, skipped: 0, failed: 0 }
 
 async function worker() {
   while (cursor < jobs.length) {
@@ -72,10 +74,10 @@ async function worker() {
       continue
     }
     try {
-      await sharp(job.sourcePath)
-        .rotate()
-        .resize({ width: size, withoutEnlargement: true })
-        .webp({ quality, smartSubsample: true, effort: 4 })
+      const pipeline = sharp(job.sourcePath).rotate().resize({ width: size, withoutEnlargement: true })
+      await (format === 'jpg'
+        ? pipeline.flatten({ background: '#ffffff' }).jpeg({ quality, mozjpeg: true })
+        : pipeline.webp({ quality, smartSubsample: true, effort: 4 }))
         .toFile(job.thumbnailPath)
       summary.created += 1
     } catch (error) {

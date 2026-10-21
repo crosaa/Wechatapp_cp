@@ -388,13 +388,15 @@ function thumbnailFit(value) {
   return String(value || '').toLowerCase() === 'width' ? 'width' : 'inside'
 }
 
-async function ensureImageThumbnail(sourcePath, requestedSize = 360, requestedFit = 'inside') {
+// Thumbnails are WebP; full-screen previews are also served as JPG (format 'jpg'), because WeChat
+// on PC forwards a WebP picture to a friend as a file instead of a picture.
+async function ensureImageThumbnail(sourcePath, requestedSize = 360, requestedFit = 'inside', format = 'webp') {
   const local = localUploadPath(sourcePath)
   if (!local) return null
   const size = thumbnailSize(requestedSize)
   const fit = thumbnailFit(requestedFit)
   const thumbnailKey = local.relativeSource.replaceAll('\\', '/')
-  const thumbnailName = `${createHash('sha1').update(thumbnailKey).digest('hex')}-${size}-${fit}.webp`
+  const thumbnailName = `${createHash('sha1').update(thumbnailKey).digest('hex')}-${size}-${fit}.${format === 'jpg' ? 'jpg' : 'webp'}`
   const thumbnailPath = join(thumbnailsDir, thumbnailName)
   if (!existsSync(thumbnailPath)) {
     let task = thumbnailTasks.get(thumbnailPath)
@@ -403,10 +405,10 @@ async function ensureImageThumbnail(sourcePath, requestedSize = 360, requestedFi
         ? { width: size, withoutEnlargement: true }
         : { width: size, height: size, fit: 'inside', withoutEnlargement: true }
       const quality = size >= 1600 ? 86 : 76
-      task = sharp(local.filePath)
-        .rotate()
-        .resize(resizeOptions)
-        .webp({ quality, smartSubsample: true, effort: 4 })
+      const pipeline = sharp(local.filePath).rotate().resize(resizeOptions)
+      task = (format === 'jpg'
+        ? pipeline.flatten({ background: '#ffffff' }).jpeg({ quality: size >= 1600 ? 88 : 80, mozjpeg: true })
+        : pipeline.webp({ quality, smartSubsample: true, effort: 4 }))
         .toFile(thumbnailPath)
         .finally(() => thumbnailTasks.delete(thumbnailPath))
       thumbnailTasks.set(thumbnailPath, task)
@@ -416,12 +418,12 @@ async function ensureImageThumbnail(sourcePath, requestedSize = 360, requestedFi
   return thumbnailPath
 }
 
-async function serveProductThumbnail(res, sourcePath, requestedSize, requestedFit) {
-  const thumbnailPath = await ensureImageThumbnail(sourcePath, requestedSize, requestedFit)
+async function serveProductThumbnail(res, sourcePath, requestedSize, requestedFit, format = 'webp') {
+  const thumbnailPath = await ensureImageThumbnail(sourcePath, requestedSize, requestedFit, format)
   if (!thumbnailPath) return false
   const content = await readFile(thumbnailPath)
   res.writeHead(200, {
-    'content-type': 'image/webp',
+    'content-type': format === 'jpg' ? 'image/jpeg' : 'image/webp',
     'content-length': content.length,
     'cache-control': 'public, max-age=2592000, immutable',
     'x-content-type-options': 'nosniff'
@@ -886,8 +888,12 @@ async function optimizeUploadedImage(buffer, options = {}) {
   const mode = imageUploadMode(options.mode)
   const profile = imagePurposeProfiles[purpose]
   const sourceExtension = metadata.format === 'jpeg' ? '.jpg' : `.${metadata.format}`
+  // Pictures that customers open full size are kept as JPG or PNG, never WebP: they can save the
+  // original, and WeChat on PC forwards a WebP picture as a file. Category pictures and icons,
+  // only ever shown small, are WebP. A WebP sent as an untouched original is still converted.
+  const webpAllowed = Boolean(profile.preferWebp)
 
-  if (mode === 'original') {
+  if (mode === 'original' && (metadata.format !== 'webp' || webpAllowed)) {
     return {
       buffer,
       extension: sourceExtension,
@@ -905,26 +911,29 @@ async function optimizeUploadedImage(buffer, options = {}) {
     }
   }
 
-  const resizeOptions = {
-    width: profile.maxWidth,
-    height: profile.maxHeight,
-    fit: 'inside',
-    withoutEnlargement: true
+  const resizeOptions = mode === 'original'
+    ? null
+    : { width: profile.maxWidth, height: profile.maxHeight, fit: 'inside', withoutEnlargement: true }
+  const createPipeline = () => {
+    const pipeline = sharp(buffer, { limitInputPixels: 80_000_000, failOn: 'error' }).rotate()
+    return resizeOptions ? pipeline.resize(resizeOptions) : pipeline
   }
-  const createPipeline = () => sharp(buffer, { limitInputPixels: 80_000_000, failOn: 'error' }).rotate().resize(resizeOptions)
+  const quality = mode === 'original' ? 95 : profile.quality
+  const transparent = metadata.format === 'png' || (metadata.format === 'webp' && Boolean(metadata.hasAlpha))
 
-  let extension = profile.preferWebp ? '.webp' : metadata.format === 'png' ? '.png' : metadata.format === 'webp' ? '.webp' : '.jpg'
-  let output = profile.preferWebp
-    ? await createPipeline().webp({ quality: profile.quality, smartSubsample: true, effort: 4 }).toBuffer()
-    : metadata.format === 'png'
-    ? await createPipeline().png({ compressionLevel: 9, adaptiveFiltering: true }).toBuffer()
-    : metadata.format === 'webp'
-      ? await createPipeline().webp({ quality: profile.quality, smartSubsample: true }).toBuffer()
-      : await createPipeline().jpeg({ quality: profile.quality, mozjpeg: true, chromaSubsampling: '4:2:0' }).toBuffer()
+  let extension = webpAllowed ? '.webp' : transparent ? '.png' : '.jpg'
+  let output = webpAllowed
+    ? await createPipeline().webp({ quality, smartSubsample: true, effort: 4 }).toBuffer()
+    : transparent
+      ? await createPipeline().png({ compressionLevel: 9, adaptiveFiltering: true }).toBuffer()
+      : await createPipeline().jpeg({ quality, mozjpeg: true, chromaSubsampling: '4:2:0' }).toBuffer()
 
-  if (output.length > Math.min(uploadedImageLimits.maxOutputBytes, profile.maxOutputBytes)) {
-    output = await createPipeline().webp({ quality: Math.max(68, profile.quality - 8), smartSubsample: true, effort: 4 }).toBuffer()
-    extension = '.webp'
+  if (mode !== 'original' && output.length > Math.min(uploadedImageLimits.maxOutputBytes, profile.maxOutputBytes)) {
+    const smallerQuality = Math.max(68, profile.quality - 8)
+    output = webpAllowed
+      ? await createPipeline().webp({ quality: smallerQuality, smartSubsample: true, effort: 4 }).toBuffer()
+      : await createPipeline().flatten({ background: '#ffffff' }).jpeg({ quality: smallerQuality, mozjpeg: true, chromaSubsampling: '4:2:0' }).toBuffer()
+    extension = webpAllowed ? '.webp' : '.jpg'
   }
 
   const normalized = await sharp(output).metadata()
@@ -968,7 +977,8 @@ async function uploadImage(body) {
       ensureImageThumbnail(url, 360),
       ensureImageThumbnail(url, 960, 'width'),
       ensureImageThumbnail(url, 1200, 'width'),
-      ensureImageThumbnail(url, 2000, 'width')
+      // The full-screen preview, as JPG (see ensureImageThumbnail).
+      ensureImageThumbnail(url, 2000, 'width', 'jpg')
     ])
   }
   return { url, optimization: optimized.metadata }
@@ -1102,7 +1112,7 @@ async function downloadImageToUploads(value, redirectCount = 0, options = {}) {
       ensureImageThumbnail(localUrl, 360),
       ensureImageThumbnail(localUrl, 960, 'width'),
       ensureImageThumbnail(localUrl, 1200, 'width'),
-      ensureImageThumbnail(localUrl, 2000, 'width')
+      ensureImageThumbnail(localUrl, 2000, 'width', 'jpg')
     ])
   }
   return { url: localUrl, optimization: optimized.metadata }
@@ -1265,8 +1275,9 @@ async function handleApi(req, res, url) {
     return true
   }
 
-  if (url.pathname === '/api/product-thumbnail' && req.method === 'GET') {
-    if (!await serveProductThumbnail(res, url.searchParams.get('src'), url.searchParams.get('size'), url.searchParams.get('fit'))) json(res, 404, { error: '图片不存在' }, publicJsonHeaders)
+  if ((url.pathname === '/api/product-thumbnail' || url.pathname === '/api/product-thumbnail.jpg') && req.method === 'GET') {
+    const format = url.pathname.endsWith('.jpg') ? 'jpg' : 'webp'
+    if (!await serveProductThumbnail(res, url.searchParams.get('src'), url.searchParams.get('size'), url.searchParams.get('fit'), format)) json(res, 404, { error: '图片不存在' }, publicJsonHeaders)
     return true
   }
 

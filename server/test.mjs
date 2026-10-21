@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -39,6 +40,32 @@ const rerankedMatches = applyImageRerank(
 assert.deepEqual(rerankedMatches.map(match => match.id), [2, 1, 3])
 assert.equal(rerankedMatches[0].aiConfidence, 91)
 assert.equal(rerankedMatches[0].recognitionMethod, 'ai-reranked')
+// The colour stays the product's own colour name (the mini program opens the product on it);
+// the review's own words for the colour are kept apart.
+const colouredRerank = applyImageRerank(
+  [{ id: 1, matchedColor: '藏蓝色' }],
+  [{ label: 'A', match: { id: 1, matchedColor: '藏蓝色' } }],
+  parseImageRerankResponse('{"best":"A","ranking":["A"],"matched_color":"深蓝色"}', ['A'])
+)
+assert.equal(colouredRerank[0].matchedColor, '藏蓝色')
+assert.equal(colouredRerank[0].aiColor, '深蓝色')
+// The review's words pick the product colour they clearly name; otherwise retrieval's colour stays.
+const twoToneColours = ['藏蓝拼米白', '中灰拼藏蓝', '天空蓝拼藏蓝']
+const namedColour = words => applyImageRerank(
+  [{ id: 1, matchedColor: '天空蓝拼藏蓝', colors: twoToneColours }],
+  [{ label: 'A', match: { id: 1, matchedColor: '天空蓝拼藏蓝', colors: twoToneColours } }],
+  parseImageRerankResponse(JSON.stringify({ best: 'A', ranking: ['A'], matched_color: words }), ['A'])
+)[0].matchedColor
+assert.equal(namedColour('浅灰拼深蓝'), '中灰拼藏蓝')
+assert.equal(namedColour('蓝色'), '天空蓝拼藏蓝')
+// The colour the review picks from the candidate's colours wins; one it does not have is ignored.
+const pickedColour = bestColor => applyImageRerank(
+  [{ id: 1, matchedColor: '天空蓝拼藏蓝', colors: twoToneColours }],
+  [{ label: 'A', match: { id: 1, matchedColor: '天空蓝拼藏蓝', colors: twoToneColours } }],
+  parseImageRerankResponse(JSON.stringify({ best: 'A', ranking: ['A'], matched_color: '蓝色', best_color: bestColor }), ['A'])
+)[0].matchedColor
+assert.equal(pickedColour('藏蓝拼米白'), '藏蓝拼米白')
+assert.equal(pickedColour('大红色'), '天空蓝拼藏蓝')
 // Up to 20 candidates (labels A-T); the model may rank only its top few.
 assert.deepEqual(parseImageRerankResponse('{"best":"P","ranking":["P","C","Q"],"confidence":88}', 'ABCDEFGHIJKLMNOPQRST'.split('')).ranking, ['P', 'C', 'Q'])
 const uncertainRerank = parseImageRerankResponse('{"best":"none","uncertain":true,"confidence":42,"ranking":["A","B"]}', ['A', 'B'])
@@ -476,6 +503,27 @@ try {
   assert.equal(originalUpload.body.optimization.height, 300)
   assert.equal(originalUpload.body.optimization.mode, 'original')
   assert.equal(originalUpload.body.optimization.changed, false)
+  // Product pictures are never kept as WebP (WeChat on PC forwards WebP as a file): an opaque
+  // WebP becomes JPG, a transparent one PNG, also when sent as an untouched original. The
+  // full-screen JPG preview is made at upload.
+  const webpProduct = await sharp({ create: { width: 800, height: 600, channels: 3, background: { r: 30, g: 60, b: 120 } } }).webp().toBuffer()
+  const webpTransparent = await sharp({ create: { width: 400, height: 400, channels: 4, background: { r: 200, g: 20, b: 20, alpha: 0.5 } } }).webp().toBuffer()
+  for (const [fileName, buffer, mode, extension] of [
+    ['product.webp', webpProduct, 'auto', 'jpg'],
+    ['cutout.webp', webpTransparent, 'auto', 'png'],
+    ['original.webp', webpProduct, 'original', 'jpg']
+  ]) {
+    const webpUpload = await request('/api/admin/uploads', {
+      method: 'POST',
+      body: JSON.stringify({ fileName, purpose: 'product', mode, dataUrl: `data:image/webp;base64,${buffer.toString('base64')}` })
+    }, cookie)
+    assert.equal(webpUpload.response.status, 201)
+    assert.match(webpUpload.body.url, new RegExp(`^/uploads/.+\\.${extension}$`))
+    const storedFormat = (await sharp(Buffer.from(await (await fetch(`${base}${webpUpload.body.url}`)).arrayBuffer())).metadata()).format
+    assert.equal(storedFormat, extension === 'jpg' ? 'jpeg' : extension)
+    const previewName = `${createHash('sha1').update(webpUpload.body.url.slice('/uploads/'.length)).digest('hex')}-2000-width.jpg`
+    assert.ok(existsSync(join(workspace, 'uploads', '.thumbnails', previewName)))
+  }
   const originalImageResponse = await fetch(`${base}${originalUpload.body.url}`)
   assert.equal(originalImageResponse.status, 200)
   assert.match(originalImageResponse.headers.get('cache-control'), /max-age=2592000/)
@@ -501,6 +549,14 @@ try {
   assert.equal(previewThumbnailMetadata.width, 2000)
   assert.equal(previewThumbnailMetadata.height, 250)
   assert.equal(previewThumbnailMetadata.format, 'webp')
+  // Full-screen previews as JPG, which WeChat on PC forwards as a picture rather than a file.
+  const jpegPreviewResponse = await fetch(`${base}/api/product-thumbnail.jpg?src=${encodeURIComponent(originalUpload.body.url)}&size=2000&fit=width`)
+  assert.equal(jpegPreviewResponse.status, 200)
+  assert.equal(jpegPreviewResponse.headers.get('content-type'), 'image/jpeg')
+  const jpegPreviewMetadata = await sharp(Buffer.from(await jpegPreviewResponse.arrayBuffer())).metadata()
+  assert.equal(jpegPreviewMetadata.format, 'jpeg')
+  assert.equal(jpegPreviewMetadata.width, 2000)
+  assert.equal(jpegPreviewMetadata.height, 250)
 
   const cleanupUpload = await request('/api/admin/uploads', {
     method: 'POST',

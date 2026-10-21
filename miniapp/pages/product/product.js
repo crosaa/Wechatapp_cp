@@ -140,7 +140,7 @@ function galleryState(product, color, preferColorImage = false, brokenImages = n
     selectedGallerySlides: selectedGallery.map((original, index) => ({
       original,
       display: thumbnailImage(original, 960, 'width'),
-      preview: thumbnailImage(original, PREVIEW_IMAGE_SIZE, 'width'),
+      preview: thumbnailImage(original, PREVIEW_IMAGE_SIZE, 'width', 'jpg'),
       src: index < GALLERY_EAGER_SLIDES || index === galleryCurrent ? thumbnailImage(original, 960, 'width') : ''
     })),
     galleryCurrent,
@@ -204,6 +204,8 @@ Page({
   onLoad(options) {
     const id = Number(options.id)
     this.currentProductId = id
+    // Opened from 拍图识别: the colour in the photo, when the product has it.
+    this.openedColor = options.color ? decodeURIComponent(options.color) : ''
     this.hasShownOnce = false
     const app = getApp()
     const pendingPreview = app.globalData.productPreview
@@ -220,7 +222,7 @@ Page({
     app.globalData.productPreview = null
     app.globalData.productPreviewReady = false
     app.globalData.productWarmRequest = null
-    if (preview) this.applyProduct(preview, previewReady)
+    if (preview) this.applyProduct(preview, previewReady, this.openedColor)
     this.loadRemoteProduct(id, warmPromise, previewReady)
   },
   onShow() {
@@ -280,7 +282,7 @@ Page({
       // Fetched ahead on 分类 before a change that has been noticed since: fetched again.
       if (product && product.dataVersion !== dataVersion()) product = await fetchProduct(id)
       if (!product) throw new Error('商品资料加载失败')
-      if (!skipDuplicateApply || product.dataVersion !== this.renderedVersion) this.applyProduct(product, true)
+      if (!skipDuplicateApply || product.dataVersion !== this.renderedVersion) this.applyProduct(product, true, this.data.selectedColor || this.openedColor)
     } catch (error) {
       this.setData({ loadError: true })
       console.info('商品资料加载失败', error.errMsg || error.message)
@@ -386,7 +388,7 @@ Page({
       wx.showToast({ title: '该商品暂未上传海报', icon: 'none' })
       return
     }
-    const preview = thumbnailImage(posterImage, PREVIEW_IMAGE_SIZE, 'width')
+    const preview = thumbnailImage(posterImage, PREVIEW_IMAGE_SIZE, 'width', 'jpg')
     wx.previewImage({ current: preview, urls: [preview], showmenu: true })
   },
   goHome() { openTab('home') },

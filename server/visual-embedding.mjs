@@ -331,8 +331,12 @@ async function queryEmbedding(input) {
 // first-place hits for photos matched against catalog pictures (9.5% -> 17.4%). The penalty
 // suits the embedding model: 0.03 for qwen3-vl-embedding; with tongyi-embedding-vision-plus a
 // larger one trades a little on warehouse photos for much better customer photos.
+// Both are settings (VISUAL_EMBEDDING_HUB_WEIGHT, VISUAL_EMBEDDING_REAL_PHOTO_PENALTY) so they can
+// be tuned on the shop's real recognitions: the photos taken in the shop resemble its warehouse
+// photos, which a strong correction pushes down.
 const HUB_NEIGHBOURS = 10
-const HUB_WEIGHT = 0.75
+const hubWeightSetting = String(process.env.VISUAL_EMBEDDING_HUB_WEIGHT ?? '').trim()
+const HUB_WEIGHT = hubWeightSetting !== '' && Number.isFinite(Number(hubWeightSetting)) ? Math.max(0, Math.min(1, Number(hubWeightSetting))) : 0.75
 const realPhotoPenaltySetting = String(process.env.VISUAL_EMBEDDING_REAL_PHOTO_PENALTY ?? '').trim()
 const REAL_PHOTO_PENALTY = realPhotoPenaltySetting !== '' && Number.isFinite(Number(realPhotoPenaltySetting)) ? Number(realPhotoPenaltySetting) : 0.03
 // Correcting only each query's closest pictures ranks exactly like correcting all of them.
@@ -447,6 +451,9 @@ export async function rankProductsForVector(query, productIds, { keep = () => tr
   }
   const bestByProduct = new Map()
   const wholeByProduct = new Map()
+  // The colour of each product's closest colour picture (warehouse photos carry no colour), so
+  // the product can be opened on the colour in the photo.
+  const colourByProduct = new Map()
   scored.forEach((entry, position) => {
     // Pictures beyond the corrected ones keep their cosine order, below all corrected ones.
     const score = position < corrected
@@ -458,9 +465,15 @@ export async function rankProductsForVector(query, productIds, { keep = () => tr
     const level = wholeGarmentLevel(entry.item)
     const whole = wholeByProduct.get(productId)
     if (!whole || level > whole.level || (level === whole.level && score > whole.score)) wholeByProduct.set(productId, { item: entry.item, level, score })
+    const colour = colourByProduct.get(productId)
+    if (entry.item.colors?.length && (!colour || score > colour.score)) colourByProduct.set(productId, { colour: entry.item.colors[0], score })
   })
   return [...bestByProduct.values()]
-    .map(entry => ({ ...entry, wholeItem: wholeByProduct.get(entry.productId)?.item || entry.item }))
+    .map(entry => ({
+      ...entry,
+      wholeItem: wholeByProduct.get(entry.productId)?.item || entry.item,
+      matchedColor: colourByProduct.get(entry.productId)?.colour || ''
+    }))
     .sort((left, right) => right.score - left.score)
 }
 
@@ -483,7 +496,7 @@ export async function retrieveVisualEmbeddingProducts(input, products, limit = 3
   return ranked
     .slice(0, Math.max(1, Math.min(50, Number(limit) || 30)))
     .map(entry => ({ ...entry, product: productById.get(entry.productId) }))
-    .map(({ item, wholeItem, product, cosine, score }) => ({
+    .map(({ item, wholeItem, matchedColor, product, cosine, score }) => ({
       id: product.id,
       name: product.name,
       code: product.code,
@@ -497,7 +510,9 @@ export async function retrieveVisualEmbeddingProducts(input, products, limit = 3
       // decides whether the vision review is asked.
       retrievalScore: Number(score.toFixed(4)),
       confidence: Math.max(0, Math.min(100, Math.round((cosine + 1) * 50))),
-      matchedColor: item.colors?.[0] || '',
+      // One of the product's own colour names (see rankProductsForVector).
+      matchedColor: matchedColor || item.colors?.[0] || '',
+      colors: Array.isArray(product.colors) ? product.colors : [],
       referenceType: item.roles?.[0] || '',
       recognitionMethod: 'visual-embedding',
       basis: { embedding: Math.round(cosine * 100) }
