@@ -6,7 +6,9 @@ import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 import XLSX from 'xlsx'
 import sharp from 'sharp'
+import AdmZip from 'adm-zip'
 import { buildWarehouseInventoryPlan } from './warehouse-inventory.mjs'
+import { planDouyinStock, readStockTemplate, writeStockImport } from './douyin-stock-plan.mjs'
 import { applyImageRerank, parseImageRerankResponse } from './image-reranker.mjs'
 import {
   normalizeEmbedding,
@@ -158,6 +160,48 @@ assert.equal(manualSameCodeVariantPlan.summary.manualMappedGroups, 1)
 assert.equal(manualSameCodeVariantPlan.changes.find(change => change.product.id === 680011).colorSizeStocks.银灰.L, 9)
 assert.equal(manualSameCodeVariantPlan.changes.find(change => change.product.id === 680012).colorSizeStocks.银灰.L, 0)
 
+// 抖店 stock sync: a template shaped like 抖店's 商品库存模版导出 (inline-string cells, notes row, header row).
+const douyinTemplateRows = [
+  ['“库存”导入注意事项'],
+  ['商品id(必填)', '商品名称', '规格ID[SkuId](必填)', '商家编码', '商品规格', '现货可售', '增加/减少(必填)', '库存变更数量(必填)'],
+  ['111', '三合一冲锋衣650', '9001', '', '{颜色分类:藏青色， 尺码大小:M}', '5', '', ''],
+  ['111', '三合一冲锋衣650', '9002', '', '{颜色分类:藏青色， 尺码大小:L}', '20', '', ''],
+  ['111', '三合一冲锋衣650', '9003', '', '{颜色分类:藏青色， 尺码大小:XL}', '3', '', ''],
+  ['222', '软壳衣男女同款2407', '9004', '', '{颜色分类:黑色， 尺码大小:M}', '4', '', ''],
+  ['333', '单层冲锋衣8828', '9005', '', '{颜色分类:黑色， 尺码大小:M}', '2', '', '']
+]
+const douyinCell = (column, row, value) => `<c r="${column}${row}" t="inlineStr"><is><t>${value}</t></is></c>`
+const douyinZip = new AdmZip()
+douyinZip.addFile('[Content_Types].xml', Buffer.from('<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'))
+douyinZip.addFile('_rels/.rels', Buffer.from('<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'))
+douyinZip.addFile('xl/workbook.xml', Buffer.from('<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>'))
+douyinZip.addFile('xl/_rels/workbook.xml.rels', Buffer.from('<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>'))
+douyinZip.addFile('xl/worksheets/sheet1.xml', Buffer.from(`<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${douyinTemplateRows.map((row, index) => `<row r="${index + 1}">${row.map((value, column) => douyinCell('ABCDEFGH'[column], index + 1, value)).join('')}</row>`).join('')}</sheetData></worksheet>`))
+const douyinTemplate = douyinZip.toBuffer()
+const douyinRows = readStockTemplate(douyinTemplate)
+assert.equal(douyinRows.length, 5)
+const douyinPlan = planDouyinStock({
+  rows: douyinRows,
+  products: [
+    { id: 124, code: '650', name: '650款冲锋衣', colorSizeStocks: { '藏青色': { 'M/165': 7, 'L/170': 40, XL: 3 } } },
+    { id: 23, code: '2407', name: '2407软壳', colorSizeStocks: { '黑色': { M: 0 } } },
+    { id: 721, code: '8828', name: '8828三合一', colorSizeStocks: { '黑色': { M: 9 } } },
+    { id: 798, code: '8828', name: '8828外皮', colorSizeStocks: { '黑色': { M: 9 } } }
+  ],
+  mapping: [{ douyinId: '111', productId: 124 }]
+})
+// M: 5 → 7; L: 40 is capped at 20, already 20; XL unchanged; 2407 found by its model code: 4 → 0;
+// 8828 is the code of two products and is not in the mapping, so it is left alone.
+assert.deepEqual(douyinPlan.changes.map(change => [change.skuId, change.target, change.delta]), [['9001', 7, 2], ['9004', 0, -4]])
+assert.equal(douyinPlan.same, 2)
+assert.deepEqual(douyinPlan.unmatched.map(row => [row.skuId, row.reason]), [['9005', '款号 8828 对应多个小程序商品']])
+const douyinImport = XLSX.read(writeStockImport(douyinTemplate, douyinPlan.changes), { type: 'buffer' })
+assert.deepEqual(XLSX.utils.sheet_to_json(douyinImport.Sheets.Sheet1, { header: 1, defval: '' }).slice(1).map(row => [row[2], row[6], row[7]]), [
+  ['规格ID[SkuId](必填)', '增加/减少(必填)', '库存变更数量(必填)'],
+  ['9001', '增加', '2'],
+  ['9004', '减少', '4']
+])
+
 const workspace = mkdtempSync(join(tmpdir(), 'purun-api-'))
 const port = 3187
 const base = `http://127.0.0.1:${port}`
@@ -286,6 +330,61 @@ try {
   assert.equal(login.body.data.role, 'owner')
   const cookie = login.response.headers.get('set-cookie').split(';')[0]
 
+  // 抖店同步: admin only; before any QR login nothing runs on its own.
+  assert.equal((await request('/api/admin/douyin/status')).response.status, 401)
+  const douyinStatus = await request('/api/admin/douyin/status', {}, cookie)
+  assert.equal(douyinStatus.response.status, 200)
+  assert.equal(douyinStatus.body.data.loggedIn, null)
+  assert.equal(douyinStatus.body.data.running, null)
+  assert.equal(douyinStatus.body.data.shopName, '普润户外服饰店')
+  assert.equal(douyinStatus.body.data.syncedToday, false)
+  assert.equal(douyinStatus.body.data.available, false)
+  const manualSync = await request('/api/admin/douyin/sync', { method: 'POST', body: '{}' }, cookie)
+  assert.equal(manualSync.response.status, 409)
+  assert.match(manualSync.body.error, /21:00/)
+  // A separate worker can start and stop without taking down the public API.
+  const worker = spawn(process.execPath, ['server/douyin-worker.mjs'], {
+    cwd: new URL('..', import.meta.url),
+    env: { ...process.env, DATA_DIR: join(workspace, 'data'), NODE_ENV: 'test' },
+    stdio: ['ignore', 'pipe', 'pipe']
+  })
+  try {
+    let isolated
+    for (let i = 0; i < 40; i++) {
+      isolated = await request('/api/admin/douyin/status', {}, cookie)
+      if (isolated.body.data.available) break
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+    assert.equal(isolated.body.data.available, true)
+    assert.equal(isolated.body.data.running, null)
+    assert.equal(isolated.body.data.schedule, '每天北京时间 21:00')
+  } finally {
+    const exited = new Promise(resolve => worker.once('exit', resolve))
+    worker.kill()
+    await exited
+  }
+  assert.equal((await request('/api/admin/douyin/status', {}, cookie)).body.data.available, false)
+  assert.equal((await fetch(`${base}/api/health`)).status, 200)
+  // The sync reader must preserve the API's per-colour/size inventory without migrating or writing the DB.
+  const previousDataDir = process.env.DATA_DIR
+  process.env.DATA_DIR = join(workspace, 'data')
+  try {
+    const { listDouyinCatalogProducts } = await import('./douyin-catalog.mjs')
+    const adminCatalog = (await request('/api/admin/products', {}, cookie)).body.data
+    const stockOnly = listDouyinCatalogProducts()
+    assert.equal(stockOnly.length, adminCatalog.length)
+    for (const product of stockOnly) {
+      const expected = adminCatalog.find(item => item.id === product.id)
+      assert.equal(product.code, expected.code)
+      assert.deepEqual(product.colorSizeStocks, expected.colorSizeStocks)
+    }
+  } finally {
+    if (previousDataDir === undefined) delete process.env.DATA_DIR
+    else process.env.DATA_DIR = previousDataDir
+  }
+
+
+
   const currentAdmin = await request('/api/auth/me', {}, cookie)
   assert.equal(currentAdmin.response.status, 200)
   assert.deepEqual(currentAdmin.body.data, {
@@ -350,6 +449,9 @@ try {
     body: JSON.stringify({})
   }, normalCookie)
   assert.equal(normalInventoryAccess.response.status, 400)
+  // 抖店同步 (the daily QR scan) belongs to the owner.
+  assert.equal((await request('/api/admin/douyin/status', {}, normalCookie)).response.status, 403)
+  assert.equal((await request('/api/admin/douyin/login', { method: 'POST', body: '{}' }, normalCookie)).response.status, 403)
   const forbiddenAccountManagement = await request('/api/admin/users', {}, normalCookie)
   assert.equal(forbiddenAccountManagement.response.status, 403)
 
@@ -938,6 +1040,8 @@ try {
   assert.equal(imported.body.data.productsUpdated, publicList.body.data.length + 1)
   assert.equal(imported.body.data.locationsUpdated, 1)
   assert.equal(imported.body.data.locationsCleared, publicList.body.data.length)
+  // Not logged in to 抖店 yet, so the import does not queue a 抖店 sync.
+  assert.equal((await request('/api/admin/douyin/status', {}, cookie)).body.data.scheduled, null)
   const templateReport = await readReport(imported.body.data.unmatchedReport, cookie)
   assert.deepEqual(templateReport.SheetNames, ['导入说明', '未匹配产品'])
   const templateReportRows = XLSX.utils.sheet_to_json(templateReport.Sheets['未匹配产品'], { header: 1, defval: '' })

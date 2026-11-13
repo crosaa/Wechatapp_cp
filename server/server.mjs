@@ -1,4 +1,5 @@
 import { createServer } from 'node:http'
+import { createDiagnostics } from './diagnostics.mjs'
 import { createHash, createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto'
 import { lookup } from 'node:dns/promises'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
@@ -44,6 +45,7 @@ import {
   updateStoreSettings
 } from './db.mjs'
 import { createUnmatchedInventoryReport } from './unmatched-inventory-report.mjs'
+import { douyinLoginAction, douyinSyncStatus, startDouyinLogin } from './douyin-worker-client.mjs'
 
 const rootDir = fileURLToPath(new URL('.', import.meta.url))
 const publicDir = join(rootDir, 'public')
@@ -1414,6 +1416,42 @@ async function handleApi(req, res, url) {
     return true
   }
 
+  // 抖店同步 is the owner's (崔平's) job: the QR login is scanned with the shop owner's 抖店 App.
+  if (url.pathname.startsWith('/api/admin/douyin/') && currentAdmin.role !== 'owner') {
+    json(res, 403, { error: '只有主管理员可以管理抖店同步' })
+    return true
+  }
+
+  if (url.pathname === '/api/admin/douyin/status' && req.method === 'GET') {
+    json(res, 200, { data: await douyinSyncStatus() })
+    return true
+  }
+
+  if (url.pathname === '/api/admin/douyin/login' && req.method === 'POST') {
+    try {
+      json(res, 200, { data: await startDouyinLogin() })
+    } catch (error) {
+      json(res, 409, { error: error.message })
+    }
+    return true
+  }
+
+  // 抖店's 安全验证 during the QR login: send the SMS code, enter it, or click/drag on the login box picture.
+  if (url.pathname === '/api/admin/douyin/login/action' && req.method === 'POST') {
+    try {
+      json(res, 200, { data: await douyinLoginAction(await readJson(req, 4096)) })
+    } catch (error) {
+      console.warn(`抖店扫码登录操作失败：${error.message}`)
+      json(res, 409, { error: error.message.split('\n')[0] })
+    }
+    return true
+  }
+
+  if (url.pathname === '/api/admin/douyin/sync' && req.method === 'POST') {
+    json(res, 409, { error: '库存仅在每天北京时间 21:00 同步一次' })
+    return true
+  }
+
   if (url.pathname === '/api/admin/inventory/reports/latest/details' && req.method === 'GET') {
     const details = latestInventoryReview()
     if (!details?.rows?.length) json(res, 404, { error: '最近一次库存导入没有未匹配明细' })
@@ -1605,7 +1643,10 @@ async function handleApi(req, res, url) {
       sourceFileName: body.fileName,
       report: data.unmatchedReport
     })
-    if (data.applied) markPublicDataChanged()
+    if (data.applied) {
+      markPublicDataChanged()
+      // Douyin reads the latest inventory in its isolated daily 21:00 task.
+    }
     json(res, 200, { data })
     return true
   }
@@ -1731,7 +1772,9 @@ async function handleApi(req, res, url) {
   return true
 }
 
+const diagnostics = createDiagnostics({ service: 'api' })
 const server = createServer(async (req, res) => {
+  diagnostics.observe(req, res)
   const url = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`)
   const requestHost = String(req.headers.host || '').split(':')[0].toLowerCase()
   const publicSiteRequest = requestHost === 'xinghaiapp.top' || requestHost === 'www.xinghaiapp.top'
@@ -1757,6 +1800,7 @@ const server = createServer(async (req, res) => {
     json(res, 404, { error: '页面不存在' })
   } catch (error) {
     const message = error instanceof SyntaxError ? '请求格式不正确' : error.message || '服务异常'
+    diagnostics.recordError(req, error)
     const duplicate = /UNIQUE constraint failed/.test(message)
     const duplicateCategory = /catalog_categories\.(?:name|category_key)/.test(message)
     json(res, duplicate ? 409 : 400, { error: duplicate ? (duplicateCategory ? '分类名称已存在，请更换名称' : '款号已存在，请更换款号') : message })
@@ -1778,6 +1822,7 @@ server.listen(port, '127.0.0.1', () => {
   const cases = recognitionCasesStatus()
   console.log(cases.enabled ? `拍图识别案例：已保存 ${cases.count} 条，最多 ${cases.maxCases} 条、保留 ${cases.maxDays} 天，有把握的按 ${Math.round(cases.sureShare * 100)}% 抽样` : '拍图识别案例：不保存')
   if (!process.env.ADMIN_PASSWORD) console.log('本地演示账号：admin / admin123（正式部署前必须修改）')
+  console.log('抖店库存同步由独立服务负责：每天北京时间 21:00 一次')
 })
 
 ensureImageSearchIndex(listProducts({ status: 'published' }).map(withoutMissingImages))

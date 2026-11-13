@@ -74,6 +74,17 @@
 - 自动化接口测试
 - 每日生成 SQLite 一致性备份并清理超过 5 天的旧备份；同时清理超过 24 小时仍未被使用的上传图片
 
+抖店库存同步（只有主管理员能看到和操作）：通过独立的 `cpminiapp-douyin.service` 运行，和小程序 API 分开进程、分开资源组；同步服务 CPU 最多使用 0.75 个核，内存软上限 900MB、硬上限 1GB。`cpminiapp-douyin-sync.timer` 仅在每天北京时间 21:00 启动一次，使用当时的小程序最新库存（每个 SKU 最多 20 件）；同一天即使任务失败或服务重启也不会再跑，错过时间不会补跑。扫码只更新登录，导入库存不触发抖店同步，不再自动失败重试，后台取消立即同步。登录有效时不再每天弹出扫码窗口；失效时请在后台扫码，等待下一次 21:00 同步。独立服务使用权限为 0600 的本机 Unix socket 与 API 通信，复用已有登录资料、商品对应和同步历史。
+
+部署隔离同步服务（代码更新到 `/opt/cpminiapp` 后）：
+
+```bash
+sudo bash /opt/cpminiapp/deploy/apply-douyin-isolation.sh
+systemctl list-timers cpminiapp-douyin-sync.timer
+```
+
+本地如需使用后台的抖店登录功能，另开终端运行 `node server/douyin-worker.mjs`；公开商品服务不依赖同步服务是否启动。 用户明确要求立即补同步时，可安装并手动启动 `deploy/cpminiapp-douyin-once.service`；它与常驻同步服务互斥，执行后自动恢复常驻服务，不修改每日定时器。此服务不启用自动调度，运行原因记为“用户授权补同步”。 同步页的记录统一显示北京时间，并明确显示最近一次成功时间。抖店商品列表加载较慢时，脚本等待真实工具栏可见后再打开 Excel 导入菜单；商品页与批量记录分开窗口，导出后保留原导入窗口，避免反复加载商品页导致菜单消失。同步浏览器不加载商品图片或媒体以降低资源占用；错误记录会包含失败阶段。检查脚本 `scripts/check-douyin-sync.mjs` 使用浏览器资料的临时副本和 SQLite 一致性快照，验证模板导出、库存差异和保留的导入窗口，不上传、不提交库存文件。
+
 库存名称对应关系会长期保存在 SQLite 中。同一个“来源名称 + 内部编码”可人工对应一至两个小程序商品，并为每个商品分别选择颜色。首次处理完“库存对应”页面的待对应项并保存后，后续每日上传含相同来源名称和内部编码的 Excel 会自动复用人工对应，同时更新这两个商品；新出现的名称会再次进入待对应列表。
 
 ## 本地与正式上线的区别
@@ -126,4 +137,21 @@ node scripts/build-image-thumbnails.mjs --format=jpg
 
 ```bash
 node scripts/build-image-thumbnails.mjs --size=960
+```
+
+
+## 性能诊断日志与保留策略
+
+Nginx 的结构化访问日志在 `/var/log/cpminiapp-nginx/access.log`，覆盖商品接口、缩略图和原图下载。每条包含请求 ID、状态码、传输字节、请求总耗时、后端连接/首字节/完整响应耗时；不记录请求正文、Cookie、认证头或完整查询字符串。响应头 `X-Request-ID` 可关联应用中的慢请求和客户端中断记录。
+
+API 与抖店独立进程每 60 秒各写一条 JSON 资源摘要：进程及资源组 CPU、进程及资源组内存（同步资源组包含 Chromium）、主机 CPU/空闲内存、事件循环 p99/最大延迟、请求量、慢请求、异常和客户端中断。超过 1 秒的请求和失败请求额外记录明细；每个进程每分钟最多 30 条明细，超出仅累计计数，避免异常流量放大日志。
+
+运行日志通过 journald 保留最多 7 天，服务器 journal 总容量目标上限 256MB（临时日志 64MB），单文件 16MB、至少每天轮转。该策略也覆盖系统消息及已有 journal，部署会清理超过保留时间或容量的旧 journal。Nginx 新日志每日轮转，超过 16MB 时提前轮转，每 10 分钟检查；每个文件保留最多 7 份压缩归档，超过 7 天的归档每次检查都会删除。高流量时保留时间可能缩短；活动文件在两次检查之间可能暂时超过阈值。
+
+```bash
+sudo bash /opt/cpminiapp/deploy/apply-observability.sh
+journalctl -u cpminiapp -u cpminiapp-douyin --since '10 minutes ago' --no-pager
+sudo tail -n 20 /var/log/cpminiapp-nginx/access.log
+systemctl list-timers cpminiapp-logrotate.timer
+node server/diagnostics.test.mjs
 ```

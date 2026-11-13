@@ -1,0 +1,13 @@
+[Unit]
+Description=Start the daily Douyin stock sync
+Requires=cpminiapp-douyin.service
+After=cpminiapp-douyin.service
+
+[Service]
+Type=oneshot
+User=cpminiapp
+Group=cpminiapp
+WorkingDirectory=/opt/cpminiapp
+EnvironmentFile=/etc/cpminiapp.env
+ExecStart=/usr/bin/node /opt/cpminiapp/scripts/run-douyin-scheduled-sync.mjs
+TimeoutStartSec=75

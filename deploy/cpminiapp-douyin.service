@@ -1,0 +1,31 @@
+[Unit]
+Description=Isolated Douyin stock and login worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cpminiapp
+Group=cpminiapp
+WorkingDirectory=/opt/cpminiapp
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/cpminiapp.env
+ExecStart=/usr/bin/node /opt/cpminiapp/server/douyin-worker.mjs
+Restart=on-failure
+RestartSec=10
+CPUQuota=75%
+CPUWeight=10
+MemoryHigh=900M
+MemoryMax=1G
+MemorySwapMax=128M
+Nice=10
+IOWeight=10
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/cpminiapp
+
+[Install]
+WantedBy=multi-user.target

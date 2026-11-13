@@ -1,0 +1,7 @@
+[Unit]
+Description=Rotate and expire mini program request logs
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/logrotate --state /var/lib/logrotate/cpminiapp.status /etc/cpminiapp-logrotate.conf
+ExecStartPost=/usr/bin/find /var/log/cpminiapp-nginx -maxdepth 1 -type f -name *.log.* -mtime +6 -delete

@@ -646,6 +646,161 @@ function renderInventoryMappings() {
   $('#inventoryMappingEmpty').classList.toggle('is-hidden', visible.length > 0)
 }
 
+// 抖店同步 page: the server keeps its own logged-in 抖店 browser; this page shows its state, the login QR code
+// while a login is waiting, and recent syncs. It polls while a login or sync is running.
+let douyinPollTimer = null
+let douyinStatus = null // the last status shown, for the 换一张二维码 buttons
+const douyinTime = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' }) : '—'
+// 抖店's code is good for about a minute and the server swaps in a new one by itself: say how long this one lasts,
+// and warn near the end (scanning a code that just expired only gets 抖店 App's "二维码已过期").
+function showDouyinQrTimer(element, login, waiting) {
+  const left = waiting && login?.qr && login.status === 'waiting' ? login.qrLeft : null
+  element.classList.toggle('is-hidden', !Number.isFinite(left))
+  if (!Number.isFinite(left)) return
+  element.textContent = left > 10 ? `这张二维码还能扫 ${left} 秒，过期后会自动换新的，不用刷新网页。`
+    : '这张二维码马上过期，请等新二维码出来再扫（几秒内自动换）。'
+  element.classList.toggle('is-warning', left <= 10)
+}
+// While the QR login waits: a new code at once (the server reloads 抖店's login page). After it ended: a new login.
+async function refreshDouyinQr() {
+  if (douyinStatus?.running === 'login') return douyinLoginAct({ action: 'refresh' })
+  if (douyinDailyOpen) return openDouyinDaily()
+  try {
+    renderDouyinSync((await api('/api/admin/douyin/login', { method: 'POST', body: '{}' })).data)
+  } catch (error) {
+    toast(error.message)
+    loadDouyinSync()
+  }
+}
+
+async function loadDouyinSync() {
+  clearTimeout(douyinPollTimer)
+  try {
+    renderDouyinSync((await api('/api/admin/douyin/status')).data)
+  } catch (error) {
+    $('#douyinLastResult').textContent = error.message
+  }
+}
+
+function renderDouyinSync(data) {
+  douyinStatus = data
+  document.querySelectorAll('[data-douyin-shop]').forEach(element => { element.textContent = data.shopName })
+  const loginWaiting = ['starting', 'waiting', 'scanned', 'verify', 'other', 'entering'].includes(data.login?.status) && data.running === 'login'
+  $('#douyinLoginState').textContent = data.running === 'login' ? '正在扫码登录'
+    : data.loggedIn === true ? `已登录（${douyinTime(data.loginCheckedAt)} 确认）`
+      : data.loggedIn === false ? '登录已失效，请重新扫码' : '还没登录'
+  $('#douyinLoginState').classList.toggle('is-warning', data.loggedIn !== true)
+  const last = data.lastRun
+  $('#douyinLastRun').textContent = data.running === 'sync' ? `正在同步（${douyinTime(data.runningSince)} 开始）`
+    : data.scheduled ? `即将同步（${data.scheduled}）` : last ? `${douyinTime(last.finishedAt || last.at)} · ${last.reason}` : '还没同步过'
+  $('#douyinLastResult').textContent = data.available === false ? data.message : last ? `${last.status === 'ok' ? '成功' : '失败'}：${last.message}` : '—'
+  if (data.lastSuccessAt) $('#douyinLastResult').textContent += `（最近成功：${douyinTime(data.lastSuccessAt)} 北京时间）`
+  $('#douyinLastResult').classList.toggle('is-warning', last?.status === 'error')
+
+  const box = $('#douyinLoginBox')
+  const showBox = Boolean(data.login) && data.login.status !== 'done' && (loginWaiting || Date.now() - data.login.at < 10 * 60e3)
+  box.classList.toggle('is-hidden', !showBox)
+  if (showBox) {
+    $('#douyinLoginQr').classList.toggle('is-hidden', !data.login.qr)
+    if (data.login.qr) $('#douyinLoginQr').src = data.login.qr
+    $('#douyinLoginQr').classList.toggle('is-page-shot', ['verify', 'other'].includes(data.login.status))
+    $('#douyinLoginTitle').textContent = { scanned: '已扫码', verify: '抖店要做安全验证', other: '抖店还要再确认一步', entering: '正在登录抖店…' }[data.login.status] || (loginWaiting ? '用抖店 App 扫码' : '扫码登录没有完成')
+    $('#douyinLoginHint').textContent = data.login.message
+    showDouyinQrTimer($('#douyinLoginTimer'), data.login, loginWaiting)
+    const ended = !data.running && ['expired', 'error'].includes(data.login.status)
+    $('#douyinLoginRefresh').classList.toggle('is-hidden', !((loginWaiting && data.login.status === 'waiting') || ended))
+    $('#douyinLoginRefresh').textContent = ended ? '重新获取二维码' : '换一张二维码'
+  }
+  $('#douyinLoginBox .douyin-verify').classList.toggle('is-hidden', !(loginWaiting && data.login.status === 'verify'))
+  $('#douyinLoginButton').disabled = Boolean(data.running)
+  $('#douyinSyncButton').disabled = true
+  $('#douyinSyncHistory').innerHTML = data.history.length
+    ? data.history.map(run => `<li class="${run.status === 'ok' ? '' : 'is-warning'}"><time>${escapeHtml(douyinTime(run.finishedAt || run.at))}</time><span>${escapeHtml(run.reason)}</span><p>${escapeHtml(run.message)}${(run.unmatchedSample || []).length ? `<small>${run.unmatchedSample.map(escapeHtml).join('<br>')}</small>` : ''}</p></li>`).join('')
+    : '<li class="is-empty">还没有同步记录</li>'
+  if (douyinDailyOpen) renderDouyinDaily(data)
+  if ((data.running || data.scheduled) && (activeAdminPage === 'douyin-sync' || douyinDailyOpen)) douyinPollTimer = setTimeout(loadDouyinSync, data.running === 'login' ? 2000 : 5000)
+}
+
+// Only ask for QR login when the saved session is missing or expired; login does not start a sync.
+let douyinDailyOpen = false
+let douyinDailyBaseline // the last sync already listed when the window opened (undefined until the first status)
+const douyinToday = () => new Date().toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })
+const douyinDailyStore = { get: () => { try { return localStorage.getItem('douyinDailyDismissed') } catch { return null } }, set: value => { try { localStorage.setItem('douyinDailyDismissed', value) } catch {} } }
+
+async function maybeOpenDouyinDaily() {
+  if (state.currentUser?.role !== 'owner' || douyinDailyStore.get() === douyinToday()) return
+  try {
+    const { data } = await api('/api/admin/douyin/status')
+    if (data.available === false || data.loggedIn === true || data.running === 'sync') return
+    openDouyinDaily()
+  } catch {}
+}
+
+async function openDouyinDaily() {
+  douyinDailyOpen = true
+  douyinDailyBaseline = undefined
+  $('#douyinDailyModal').classList.remove('is-hidden')
+  $('#douyinDailyBackdrop').classList.remove('is-hidden')
+  $('#douyinDailyQr').classList.add('is-hidden')
+  $('#douyinDailyRetry').classList.add('is-hidden')
+  $('#douyinDailyState').textContent = '正在打开抖店登录…'
+  try {
+    renderDouyinSync((await api('/api/admin/douyin/login', { method: 'POST', body: '{}' })).data)
+  } catch (error) {
+    $('#douyinDailyState').textContent = error.message
+    loadDouyinSync()
+  }
+}
+
+function closeDouyinDaily() {
+  douyinDailyOpen = false
+  $('#douyinDailyModal').classList.add('is-hidden')
+  $('#douyinDailyBackdrop').classList.add('is-hidden')
+}
+
+function renderDouyinDaily(data) {
+  const login = data.login || {}
+  const waiting = data.running === 'login' && ['starting', 'waiting', 'scanned', 'verify', 'other', 'entering'].includes(login.status)
+  const finished = !data.running && !data.scheduled
+  const last = data.lastRun
+  if (douyinDailyBaseline === undefined) douyinDailyBaseline = last?.at || null
+  const lastIsNew = Boolean(last) && last.at !== douyinDailyBaseline
+  let title, hint = '', retry = false
+  if (waiting) {
+    title = { scanned: '已扫码，请在手机上确认登录', starting: '正在打开抖店登录…', verify: '抖店要做安全验证', other: '抖店还要再确认一步', entering: '正在登录抖店…' }[login.status] || (login.qr ? '请用抖店 App 扫码' : '正在换新二维码…')
+    hint = login.status === 'waiting' && login.qr ? `用抖店 App 首页右上角的扫一扫扫这个二维码，再在手机上确认登录「${data.shopName}」。登录后每天北京时间 21:00 同步一次库存。` : login.message
+  } else if (login.status === 'done' && data.loggedIn === true) {
+    title = '抖店登录成功'
+    hint = '库存将在每天北京时间 21:00 同步一次。'
+  } else if (data.running === 'sync' || data.scheduled) {
+    title = '已登录抖店，正在同步库存…'
+    hint = '大约需要 3–5 分钟，可以关掉这个窗口，同步会在服务器上继续。'
+  } else if (finished && lastIsNew && last.status === 'ok') {
+    title = '今天的抖店库存已同步'
+    hint = last.message
+  } else if (finished && lastIsNew) {
+    title = '同步没有完成'
+    hint = last.message
+    retry = true
+  } else if (['expired', 'error'].includes(login.status)) {
+    title = '扫码登录没有完成'
+    hint = login.message
+    retry = true
+  } else {
+    title = '正在打开抖店登录…'
+  }
+  $('#douyinDailyState').textContent = title
+  $('#douyinDailyHint').textContent = hint
+  $('#douyinDailyQr').classList.toggle('is-hidden', !(waiting && login.qr && login.status !== 'scanned'))
+  $('#douyinDailyQr').classList.toggle('is-page-shot', ['verify', 'other'].includes(login.status))
+  $('#douyinDailyModal .douyin-verify').classList.toggle('is-hidden', !(waiting && login.status === 'verify'))
+  if (waiting && login.qr) $('#douyinDailyQr').src = login.qr
+  showDouyinQrTimer($('#douyinDailyTimer'), login, waiting)
+  const newCode = waiting && login.status === 'waiting'
+  $('#douyinDailyRetry').classList.toggle('is-hidden', !(retry || newCode))
+  $('#douyinDailyRetry').textContent = newCode ? '换一张二维码' : '重新扫码'
+}
+
 async function loadInventoryMappings({ scroll = false } = {}) {
   const button = $('#inventoryMappingRefresh')
   button.disabled = true
@@ -724,11 +879,13 @@ function renderHomepageOverview(products) {
     : '<div class="homepage-content-empty">暂无可展示分类</div>'
 }
 
-const adminPageNames = new Set(['products', 'issues', 'inventory-mappings', 'homepage', 'categories', 'media', 'settings', 'accounts'])
+const adminPageNames = new Set(['products', 'issues', 'inventory-mappings', 'douyin-sync', 'homepage', 'categories', 'media', 'settings', 'accounts'])
+const ownerOnlyPages = new Set(['douyin-sync', 'accounts'])
 const adminPageLabels = {
   products: '商品管理',
   issues: '待处理问题',
   'inventory-mappings': '库存对应',
+  'douyin-sync': '抖店同步',
   homepage: '首页展示',
   categories: '分类管理',
   media: '素材中心',
@@ -739,6 +896,7 @@ const adminPageIcons = {
   products: '▦',
   issues: '!',
   'inventory-mappings': '⇄',
+  'douyin-sync': '⇅',
   homepage: '⌂',
   categories: '▤',
   media: '▧',
@@ -806,13 +964,13 @@ function closeOperationPageTab(pageName) {
 
 function adminPageFromHash() {
   const name = decodeURIComponent(location.hash.replace(/^#/, ''))
-  if (name === 'accounts' && state.currentUser?.role !== 'owner') return 'products'
+  if (ownerOnlyPages.has(name) && state.currentUser?.role !== 'owner') return 'products'
   return adminPageNames.has(name) ? name : 'products'
 }
 
 function showAdminPage(name = adminPageFromHash(), { scrollTop = false, renderPage = false } = {}) {
   const requestedPage = adminPageNames.has(name) ? name : 'products'
-  const pageName = requestedPage === 'accounts' && state.currentUser?.role !== 'owner'
+  const pageName = ownerOnlyPages.has(requestedPage) && state.currentUser?.role !== 'owner'
     ? 'products'
     : requestedPage
   if (activeAdminPage !== pageName) adminPageScrollPositions.set(activeAdminPage, window.scrollY)
@@ -831,6 +989,7 @@ function showAdminPage(name = adminPageFromHash(), { scrollTop = false, renderPa
     loadIssues()
   }
   if (pageName === 'inventory-mappings' && !state.inventoryMappingsLoaded) loadInventoryMappings()
+  if (pageName === 'douyin-sync') loadDouyinSync()
   const shouldRenderPage = renderPage || !renderedAdminPages.has(pageName)
   if (shouldRenderPage && pageName === 'products') renderProductTable()
   if (shouldRenderPage && pageName === 'homepage') renderHomepageOverview(state.products)
@@ -855,6 +1014,7 @@ function showApp() {
     : ''
   restoreOpenAdminPages()
   scheduleProductHorizontalScrollUpdate()
+  maybeOpenDouyinDaily()
 }
 
 function showLogin(message = '') {
@@ -1983,6 +2143,68 @@ $('#operationPageTabs').addEventListener('click', event => {
 window.addEventListener('hashchange', () => showAdminPage(adminPageFromHash()))
 
 $('#inventoryMappingRefresh').addEventListener('click', () => loadInventoryMappings())
+$('#douyinLoginButton').addEventListener('click', async () => {
+  const button = $('#douyinLoginButton')
+  button.disabled = true
+  button.textContent = '正在打开二维码…'
+  try {
+    renderDouyinSync((await api('/api/admin/douyin/login', { method: 'POST', body: '{}' })).data)
+  } catch (error) {
+    toast(error.message)
+    loadDouyinSync()
+  } finally {
+    button.textContent = '扫码登录抖店'
+  }
+})
+// 抖店's 安全验证 and any other step it shows during the QR login are done on the server's page: the buttons send the
+// SMS code and submit the code typed here; a click or drag on the picture of the login box is repeated at that spot.
+async function douyinLoginAct(payload) {
+  try {
+    renderDouyinSync((await api('/api/admin/douyin/login/action', { method: 'POST', body: JSON.stringify(payload) })).data)
+  } catch (error) {
+    toast(error.message)
+    loadDouyinSync()
+  }
+}
+document.addEventListener('click', event => {
+  const button = event.target.closest('[data-douyin-action]')
+  if (!button) return
+  const action = button.dataset.douyinAction
+  if (action === 'submit-code') douyinLoginAct({ action, code: button.closest('.douyin-verify').querySelector('[data-douyin-code]').value })
+  else douyinLoginAct({ action })
+  if (action === 'send-code') toast('已让抖店发验证码，请留意店铺登录手机的短信')
+})
+let douyinPointer = null
+const douyinShotSpot = (img, event) => {
+  const rect = img.getBoundingClientRect()
+  return { x: (event.clientX - rect.left - img.clientLeft) / img.clientWidth, y: (event.clientY - rect.top - img.clientTop) / img.clientHeight }
+}
+document.addEventListener('pointerdown', event => {
+  const img = event.target.closest('img.is-page-shot[data-douyin-shot]')
+  if (!img) return
+  event.preventDefault()
+  douyinPointer = { img, start: douyinShotSpot(img, event), px: event.clientX, py: event.clientY }
+})
+document.addEventListener('pointerup', event => {
+  if (!douyinPointer) return
+  const { img, start, px, py } = douyinPointer
+  douyinPointer = null
+  const end = douyinShotSpot(img, event)
+  douyinLoginAct(Math.hypot(event.clientX - px, event.clientY - py) < 6
+    ? { action: 'click', x: start.x, y: start.y }
+    : { action: 'drag', x: start.x, y: start.y, toX: end.x, toY: end.y })
+})
+$('#douyinDailyClose').addEventListener('click', closeDouyinDaily)
+$('#douyinDailyBackdrop').addEventListener('click', closeDouyinDaily)
+$('#douyinDailyLater').addEventListener('click', () => { douyinDailyStore.set(douyinToday()); closeDouyinDaily() })
+for (const id of ['#douyinDailyRetry', '#douyinLoginRefresh']) {
+  $(id).addEventListener('click', async event => {
+    const button = event.currentTarget
+    button.disabled = true
+    try { await refreshDouyinQr() } finally { button.disabled = false }
+  })
+}
+
 $('#inventoryMappingSearch').addEventListener('input', () => {
   state.inventoryMappingPage = 1
   renderInventoryMappings()

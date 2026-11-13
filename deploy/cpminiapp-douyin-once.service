@@ -1,0 +1,28 @@
+[Unit]
+Description=Explicitly authorized one-time Douyin stock catch-up
+Conflicts=cpminiapp-douyin.service
+After=network-online.target cpminiapp-douyin.service
+
+[Service]
+Type=oneshot
+User=cpminiapp
+Group=cpminiapp
+WorkingDirectory=/opt/cpminiapp
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/cpminiapp.env
+ExecStart=/usr/bin/node /opt/cpminiapp/scripts/run-douyin-once.mjs --authorized-once
+ExecStopPost=+/usr/bin/systemctl --no-block start cpminiapp-douyin.service
+TimeoutStartSec=23min
+CPUQuota=75%
+CPUWeight=10
+MemoryHigh=900M
+MemoryMax=1G
+MemorySwapMax=128M
+Nice=10
+IOWeight=10
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/cpminiapp

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>普润制衣团购仓 · 商品管理</title>
   <link rel="icon" type="image/png" sizes="64x64" href="/images/purun-favicon.png?v=20260724-logo1" />
-  <link rel="stylesheet" href="/admin/styles.css?v=20261005-product-preview1" />
+  <link rel="stylesheet" href="/admin/styles.css?v=20261110-douyin-qr" />
 </head>
 <body>
   <section class="login-screen" id="loginScreen">
@@ -37,6 +37,7 @@
         <a class="nav-item active" href="#products"><span>▦</span>商品管理</a>
         <a class="nav-item" href="#issues"><span>!</span>待处理问题<b class="nav-badge is-hidden" id="issueNavBadge">0</b></a>
         <a class="nav-item" href="#inventory-mappings"><span>⇄</span>库存对应</a>
+        <a class="nav-item owner-only is-hidden" href="#douyin-sync"><span>⇅</span>抖店同步</a>
         <a class="nav-item" href="#homepage"><span>⌂</span>首页展示</a>
         <a class="nav-item" href="#categories"><span>▤</span>分类管理</a>
         <a class="nav-item" href="#media"><span>▧</span>素材中心</a>
@@ -99,6 +100,43 @@
         <div class="issues-list" id="issuesList"></div>
         <div class="empty-state is-hidden" id="issuesEmpty"><span>✓</span><h3>暂无待处理问题</h3><p>所有图片都能正常显示。</p></div>
         <p class="issues-meta" id="issuesMeta"></p>
+      </section>
+
+      <section class="inventory-mapping-panel douyin-sync-panel admin-page" id="douyin-sync" data-admin-page="douyin-sync">
+        <div class="inventory-mapping-head">
+          <div>
+            <p class="eyebrow">DOUYIN STOCK SYNC</p>
+            <h2>抖店库存同步</h2>
+            <p>每天北京时间 21:00，将抖店「<span data-douyin-shop>普润户外服饰店</span>」的库存同步成小程序最新库存（每个颜色尺码最多 20 件）。登录有效时无需扫码；登录失效后请重新扫码。扫码和白天导入库存不会立即同步，同步失败后等待下一晚再执行。此页时间均为北京时间。</p>
+          </div>
+          <div class="inventory-mapping-head-actions">
+            <button type="button" class="secondary-button" id="douyinLoginButton">扫码登录抖店</button>
+            <button type="button" class="primary-button" id="douyinSyncButton">每天21:00自动同步</button>
+          </div>
+        </div>
+        <div class="douyin-sync-summary">
+          <div><span>抖店登录</span><strong id="douyinLoginState">—</strong></div>
+          <div><span>上次同步</span><strong id="douyinLastRun">—</strong></div>
+          <div><span>结果</span><strong id="douyinLastResult">—</strong></div>
+        </div>
+        <div class="douyin-login-box is-hidden" id="douyinLoginBox">
+          <img id="douyinLoginQr" alt="抖店登录二维码" draggable="false" data-douyin-shot />
+          <div>
+            <strong id="douyinLoginTitle">用抖店 App 扫码</strong>
+            <p id="douyinLoginHint">打开抖店 App，点首页右上角的扫一扫，扫这个二维码，再在手机上确认登录。</p>
+            <p class="douyin-qr-timer is-hidden" id="douyinLoginTimer"></p>
+            <button type="button" class="secondary-button douyin-qr-refresh is-hidden" id="douyinLoginRefresh">换一张二维码</button>
+            <div class="douyin-verify is-hidden">
+              <button type="button" class="secondary-button" data-douyin-action="send-code">发送验证码</button>
+              <input type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="短信验证码" data-douyin-code />
+              <button type="button" class="primary-button" data-douyin-action="submit-code">验证</button>
+            </div>
+          </div>
+        </div>
+        <div class="douyin-sync-history">
+          <h3>最近同步</h3>
+          <ol id="douyinSyncHistory"></ol>
+        </div>
       </section>
 
       <section class="inventory-mapping-panel admin-page" id="inventory-mappings" data-admin-page="inventory-mappings">
@@ -472,6 +510,28 @@
 
   <div class="unmatched-report-backdrop is-hidden" id="unmatchedReportBackdrop"></div>
   <div class="issue-detail-backdrop is-hidden" id="issueDetailBackdrop"></div>
+  <div class="issue-detail-backdrop is-hidden" id="douyinDailyBackdrop"></div>
+  <section class="douyin-daily-modal is-hidden" id="douyinDailyModal" role="dialog" aria-modal="true" aria-labelledby="douyinDailyTitle">
+    <header class="issue-detail-head">
+      <div><p class="eyebrow">DAILY DOUYIN SYNC</p><h2 id="douyinDailyTitle">今天的抖店扫码</h2></div>
+      <button type="button" class="icon-button" id="douyinDailyClose" aria-label="关闭">×</button>
+    </header>
+    <div class="douyin-daily-body">
+      <img id="douyinDailyQr" class="is-hidden" alt="抖店登录二维码" draggable="false" data-douyin-shot />
+      <strong id="douyinDailyState">正在打开抖店登录…</strong>
+      <p id="douyinDailyHint">用抖店 App 首页右上角的扫一扫扫这个二维码，再在手机上确认登录。登录后每天北京时间 21:00 将抖店库存同步成小程序库存。</p>
+      <p class="douyin-qr-timer is-hidden" id="douyinDailyTimer"></p>
+      <div class="douyin-verify is-hidden">
+        <button type="button" class="secondary-button" data-douyin-action="send-code">发送验证码</button>
+        <input type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="短信验证码" data-douyin-code />
+        <button type="button" class="primary-button" data-douyin-action="submit-code">验证</button>
+      </div>
+    </div>
+    <footer class="douyin-daily-footer">
+      <button type="button" class="secondary-button" id="douyinDailyLater">今天不再提醒</button>
+      <button type="button" class="primary-button is-hidden" id="douyinDailyRetry">重新扫码</button>
+    </footer>
+  </section>
   <section class="issue-detail-modal is-hidden" id="issueDetailModal" role="dialog" aria-modal="true" aria-labelledby="issueDetailTitle">
     <header class="issue-detail-head">
       <div><p class="eyebrow">ISSUE DETAIL</p><h2 id="issueDetailTitle">问题详情</h2><p id="issueDetailSummary"></p></div>
@@ -528,6 +588,6 @@
     <p id="operationProgressDetail">正在准备文件…</p>
   </section>
   <div class="toast" id="toast" role="status"></div>
-  <script type="module" src="/admin/app.js?v=20261005-product-preview1"></script>
+  <script type="module" src="/admin/app.js?v=20261110-douyin-qr"></script>
 </body>
 </html>
