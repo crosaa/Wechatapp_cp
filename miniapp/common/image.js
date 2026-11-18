@@ -1,3 +1,5 @@
+const { originalDownloadImage } = require('./api')
+
 let savingOriginal = false
 
 function finishSaving() {
@@ -10,7 +12,7 @@ function saveOriginalImage(url) {
   savingOriginal = true
   wx.showLoading({ title: '下载原图中', mask: true })
   wx.downloadFile({
-    url,
+    url: originalDownloadImage(url),
     timeout: 30000,
     success: result => {
       if (result.statusCode < 200 || result.statusCode >= 300 || !result.tempFilePath) {

@@ -420,6 +420,54 @@ async function ensureImageThumbnail(sourcePath, requestedSize = 360, requestedFi
   return thumbnailPath
 }
 
+// 下载原图 in the mini program. Opaque PNG (or WebP) originals go out as a JPEG of the same pixel size, quality 90 with
+// full colour detail (4:4:4) so white-on-red text keeps sharp edges: 1.7–2.1 MB PNGs became about a fifth of that, with
+// no visible difference at normal size. In 2026-11 a few people saving PNG originals filled the server's ~3 Mbit/s and
+// slowed everyone's thumbnails. JPEG originals, pictures with transparency and anything the JPEG would not make smaller
+// are sent as they are. The JPEG is made once and kept next to the thumbnails.
+const originalDownloadChoices = new Map()
+
+async function originalDownloadFile(sourcePath) {
+  const local = localUploadPath(sourcePath)
+  if (!local) return null
+  const original = { path: local.filePath, type: mimeTypes[extname(local.filePath).toLowerCase()] || 'application/octet-stream' }
+  if (!/\.(png|webp)$/i.test(local.filePath)) return original
+  const key = local.relativeSource.replaceAll('\\', '/')
+  if (originalDownloadChoices.has(key)) return originalDownloadChoices.get(key)
+  const jpegPath = join(thumbnailsDir, `${createHash('sha1').update(key).digest('hex')}-original.jpg`)
+  let task = thumbnailTasks.get(jpegPath)
+  if (!task) {
+    task = (async () => {
+      if (!existsSync(jpegPath)) {
+        if (!(await sharp(local.filePath).stats()).isOpaque) return original
+        mkdirSync(thumbnailsDir, { recursive: true })
+        await sharp(local.filePath).rotate().flatten({ background: '#ffffff' })
+          .jpeg({ quality: 90, mozjpeg: true, chromaSubsampling: '4:4:4' })
+          .toFile(jpegPath)
+      }
+      return statSync(jpegPath).size < statSync(local.filePath).size ? { path: jpegPath, type: 'image/jpeg' } : original
+    })().finally(() => thumbnailTasks.delete(jpegPath))
+    thumbnailTasks.set(jpegPath, task)
+  }
+  const choice = await task
+  originalDownloadChoices.set(key, choice)
+  return choice
+}
+
+async function serveOriginalDownload(res, sourcePath) {
+  const file = await originalDownloadFile(sourcePath)
+  if (!file) return false
+  const content = await readFile(file.path)
+  res.writeHead(200, {
+    'content-type': file.type,
+    'content-length': content.length,
+    'cache-control': 'public, max-age=2592000, immutable',
+    'x-content-type-options': 'nosniff'
+  })
+  res.end(content)
+  return true
+}
+
 async function serveProductThumbnail(res, sourcePath, requestedSize, requestedFit, format = 'webp') {
   const thumbnailPath = await ensureImageThumbnail(sourcePath, requestedSize, requestedFit, format)
   if (!thumbnailPath) return false
@@ -1280,6 +1328,12 @@ async function handleApi(req, res, url) {
   if ((url.pathname === '/api/product-thumbnail' || url.pathname === '/api/product-thumbnail.jpg') && req.method === 'GET') {
     const format = url.pathname.endsWith('.jpg') ? 'jpg' : 'webp'
     if (!await serveProductThumbnail(res, url.searchParams.get('src'), url.searchParams.get('size'), url.searchParams.get('fit'), format)) json(res, 404, { error: '图片不存在' }, publicJsonHeaders)
+    return true
+  }
+
+  // Named .jpg like the preview route; a picture that has to stay PNG still goes out with its own content type.
+  if (url.pathname === '/api/product-original.jpg' && req.method === 'GET') {
+    if (!await serveOriginalDownload(res, url.searchParams.get('src'))) json(res, 404, { error: '图片不存在' }, publicJsonHeaders)
     return true
   }
 

@@ -4,6 +4,20 @@
     "ignore": [],
     "include": []
   },
+  "watchOptions": {
+    "ignore": [
+      "outputs/**",
+      "server/**",
+      "scripts/**",
+      "deploy/**",
+      "docs/**",
+      "node_modules/**",
+      ".tmp/**",
+      ".git/**",
+      ".agents/**",
+      ".claude/**"
+    ]
+  },
   "setting": {
     "urlCheck": true,
     "es6": true,

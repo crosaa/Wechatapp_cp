@@ -660,6 +660,52 @@ try {
   assert.equal(jpegPreviewMetadata.width, 2000)
   assert.equal(jpegPreviewMetadata.height, 250)
 
+  // 下载原图: an opaque PNG original goes out as a smaller JPEG of the same pixel size; JPG originals and pictures
+  // with transparency go out unchanged.
+  const photoPixels = Buffer.alloc(640 * 480 * 3)
+  for (let y = 0; y < 480; y++) for (let x = 0; x < 640; x++) {
+    const i = (y * 640 + x) * 3
+    const grain = ((x * 7919 + y * 104729) % 23) - 11
+    photoPixels[i] = Math.max(0, Math.min(255, (x * 255) / 640 + grain))
+    photoPixels[i + 1] = Math.max(0, Math.min(255, (y * 255) / 480 + grain))
+    photoPixels[i + 2] = Math.max(0, Math.min(255, 128 + grain * 2))
+  }
+  const photoPng = await sharp(photoPixels, { raw: { width: 640, height: 480, channels: 3 } }).png().toBuffer()
+  const cutoutPng = await sharp({ create: { width: 300, height: 300, channels: 4, background: { r: 200, g: 20, b: 20, alpha: 0.5 } } }).png().toBuffer()
+  const originalDownload = async (fileName, buffer) => {
+    const upload = await request('/api/admin/uploads', {
+      method: 'POST',
+      body: JSON.stringify({ fileName, purpose: 'product', mode: 'original', dataUrl: `data:image/png;base64,${buffer.toString('base64')}` })
+    }, cookie)
+    const src = upload.body.url
+    const response = await fetch(`${base}/api/product-original.jpg?src=${encodeURIComponent(src)}`)
+    return { src, response, body: Buffer.from(await response.arrayBuffer()) }
+  }
+  const photoDownload = await originalDownload('photo.png', photoPng)
+  assert.match(photoDownload.src, /\.png$/)
+  assert.equal(photoDownload.response.status, 200)
+  assert.equal(photoDownload.response.headers.get('content-type'), 'image/jpeg')
+  assert.match(photoDownload.response.headers.get('cache-control'), /immutable/)
+  const photoDownloadMetadata = await sharp(photoDownload.body).metadata()
+  assert.equal(photoDownloadMetadata.format, 'jpeg')
+  assert.equal(photoDownloadMetadata.width, 640)
+  assert.equal(photoDownloadMetadata.height, 480)
+  assert.equal(photoDownloadMetadata.chromaSubsampling, '4:4:4')
+  assert.ok(photoDownload.body.length < photoPng.length, `JPEG ${photoDownload.body.length} should be smaller than PNG ${photoPng.length}`)
+  const photoAgain = await fetch(`${base}/api/product-original.jpg?src=${encodeURIComponent(photoDownload.src)}`)
+  assert.deepEqual(Buffer.from(await photoAgain.arrayBuffer()), photoDownload.body)
+  const cutoutDownload = await originalDownload('cutout.png', cutoutPng)
+  assert.equal(cutoutDownload.response.status, 200)
+  assert.equal(cutoutDownload.response.headers.get('content-type'), 'image/png')
+  assert.deepEqual(cutoutDownload.body, Buffer.from(await (await fetch(`${base}${cutoutDownload.src}`)).arrayBuffer()))
+  const jpegOriginal = await fetch(`${base}/api/product-original.jpg?src=${encodeURIComponent(originalUpload.body.url)}`)
+  assert.equal(jpegOriginal.status, 200)
+  assert.equal(jpegOriginal.headers.get('content-type'), 'image/jpeg')
+  assert.deepEqual(Buffer.from(await jpegOriginal.arrayBuffer()), Buffer.from(await (await fetch(`${base}${originalUpload.body.url}`)).arrayBuffer()))
+  for (const src of ['/uploads/missing.png', '/uploads/../server.mjs', 'https://example.com/a.png', '']) {
+    assert.equal((await fetch(`${base}/api/product-original.jpg?src=${encodeURIComponent(src)}`)).status, 404, src)
+  }
+
   const cleanupUpload = await request('/api/admin/uploads', {
     method: 'POST',
     body: JSON.stringify({

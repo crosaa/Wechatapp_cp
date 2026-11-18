@@ -237,6 +237,16 @@ function thumbnailImage(path, size = 360, fit = 'inside', format = 'webp') {
   return absoluteImage(source)
 }
 
+// 下载原图 goes through the server, which sends a PNG original as a JPEG of the same pixel size (about a fifth of the
+// bytes, no visible difference); other pictures come back unchanged.
+function originalDownloadImage(path) {
+  const source = String(path || '')
+  const base = apiBase()
+  const relativeSource = source.startsWith(`${base}/`) ? source.slice(base.length) : source
+  if (!relativeSource.startsWith('/uploads/')) return absoluteImage(source)
+  return `${base}/api/product-original.jpg?src=${encodeURIComponent(relativeSource)}`
+}
+
 function normaliseColorSizeStocks(colors, sizes, rawColorSizeStocks, legacySizeStocks) {
   const source = rawColorSizeStocks && typeof rawColorSizeStocks === 'object' ? rawColorSizeStocks : {}
   const legacy = legacySizeStocks && typeof legacySizeStocks === 'object' ? legacySizeStocks : {}
@@ -548,4 +558,4 @@ async function recognizeProductImage(dataUrl, limit = 12) {
   return result.data || []
 }
 
-module.exports = { fetchProducts, fetchProductSummaries, fetchProduct, fetchCategories, fetchStoreSettings, fetchHomeContent, fetchCatalogContent, readHomeSnapshot, readCatalogSnapshot, readProductSnapshot, recognizeProductImage, refreshDataVersion, checkDataVersionNow, dataVersion, clearPublicDataCache, hydrateProduct, hydrateProductSummary, hydrateStoreSettings, thumbnailImage, defaultStoreSettings }
+module.exports = { fetchProducts, fetchProductSummaries, fetchProduct, fetchCategories, fetchStoreSettings, fetchHomeContent, fetchCatalogContent, readHomeSnapshot, readCatalogSnapshot, readProductSnapshot, recognizeProductImage, refreshDataVersion, checkDataVersionNow, dataVersion, clearPublicDataCache, hydrateProduct, hydrateProductSummary, hydrateStoreSettings, thumbnailImage, originalDownloadImage, defaultStoreSettings }
