@@ -877,6 +877,108 @@ export function importInventory(rows) {
   }
 }
 
+// The products the ERP keeps (it has sent them stock or 货位): their stock and 货位 come from the ERP only. Products
+// that exist only here stay editable in the admin as before.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS erp_managed_products (
+    product_id INTEGER PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+    synced_at TEXT NOT NULL
+  )
+`)
+const markErpManagedStmt = db.prepare(`
+  INSERT INTO erp_managed_products (product_id, synced_at) VALUES (?, ?)
+  ON CONFLICT(product_id) DO UPDATE SET synced_at = excluded.synced_at
+`)
+const erpManagedStmt = db.prepare('SELECT 1 FROM erp_managed_products WHERE product_id = ?')
+
+export function isErpManaged(id) {
+  return Boolean(erpManagedStmt.get(Number(id)))
+}
+
+// 货位以系统为准（用户 2026-11-20：系统货位如有调整，小程序货位同步调整）：the ERP sends each 款's 货位 (the product's
+// subtitle, shown as 「货位：…」 in the mini program).
+export function applyErpLocations(rows) {
+  if (!Array.isArray(rows)) throw new Error('货位数据格式不对')
+  const unknownProducts = []
+  let productsUpdated = 0
+  const now = new Date().toISOString()
+  db.exec('BEGIN IMMEDIATE')
+  try {
+    for (const row of rows) {
+      const id = Number(row?.productId)
+      if (!Number.isInteger(id) || id <= 0) continue
+      const product = getProduct(id)
+      if (!product) {
+        unknownProducts.push(id)
+        continue
+      }
+      markErpManagedStmt.run(id, now)
+      const location = String(row.location ?? '').trim()
+      if ((product.subtitle || '') === location) continue
+      updateProduct(id, { subtitle: location })
+      productsUpdated += 1
+    }
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
+  return { productsUpdated, unknownProducts }
+}
+
+// 库存以系统（ERPNext 总仓）为准（用户 2026-11-20）：the ERP sends 商品 颜色/尺码 quantities — its 总仓 stock less what its
+// drafts are about to send out — and only those numbers change. `full`: every 颜色/尺码 of a product that was sent
+// and is not in the list becomes 0 (the ERP has none of it); products that were not sent stay as they are.
+export function applyErpStock(cells, { full = false } = {}) {
+  if (!Array.isArray(cells)) throw new Error('库存数据格式不对')
+  const byProduct = new Map()
+  for (const cell of cells) {
+    const id = Number(cell?.productId)
+    if (!Number.isInteger(id) || id <= 0) continue
+    if (!byProduct.has(id)) byProduct.set(id, [])
+    byProduct.get(id).push(cell)
+  }
+  const unknownProducts = []
+  const unknownCells = []
+  let productsUpdated = 0
+  let cellsUpdated = 0
+  db.exec('BEGIN IMMEDIATE')
+  try {
+    for (const [id, rows] of byProduct) {
+      const product = getProduct(id)
+      if (!product) {
+        unknownProducts.push(id)
+        continue
+      }
+      markErpManagedStmt.run(id, new Date().toISOString())
+      const stocks = Object.fromEntries(product.colors.map(color => [color, Object.fromEntries(product.sizes.map(size => [
+        size, full ? 0 : Number(product.colorSizeStocks?.[color]?.[size]) || 0
+      ]))]))
+      for (const row of rows) {
+        const color = product.colors.find(item => item === String(row.color ?? ''))
+        const size = product.sizes.find(item => item === String(row.size ?? ''))
+        if (!color || !size) {
+          unknownCells.push(`${product.code} ${row.color}/${row.size}`)
+          continue
+        }
+        stocks[color][size] = Math.max(0, Math.floor(Number(row.qty) || 0))
+      }
+      const before = product.colors.flatMap(color => product.sizes.map(size => Number(product.colorSizeStocks?.[color]?.[size]) || 0))
+      const after = product.colors.flatMap(color => product.sizes.map(size => stocks[color][size]))
+      const changed = after.filter((quantity, index) => quantity !== before[index]).length
+      if (!changed) continue
+      updateProduct(id, { colorSizeStocks: stocks })
+      productsUpdated += 1
+      cellsUpdated += changed
+    }
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
+  return { productsUpdated, cellsUpdated, unknownProducts, unknownCells: unknownCells.slice(0, 50) }
+}
+
 export function importWarehouseInventory(rows, options = {}) {
   const { changes, summary, diagnostics } = buildWarehouseInventoryPlan(rows, listProducts(), {
     productMappings: listInventoryProductMappings()

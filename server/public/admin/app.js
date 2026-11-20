@@ -1487,11 +1487,15 @@ function openDrawer(product = null) {
   state.sizeStocks = { ...(product?.sizeStocks || {}) }
   state.colorSizeStocks = Object.fromEntries((product?.colors || []).map(color => [color, { ...(product?.colorSizeStocks?.[color] || {}) }]))
   state.specialSizePrices = (product?.specialSizePrices || []).map(item => ({ ...item }))
+  // 库存和货位以系统为准（ERP 同步的商品）：shown, not editable here
+  state.erpManaged = Boolean(product?.erpManaged)
   const form = $('#productForm')
   form.reset()
   form.elements.code.value = product?.code || ''
   form.elements.name.value = product?.name || ''
   form.elements.subtitle.value = product?.subtitle || ''
+  form.elements.subtitle.disabled = state.erpManaged
+  form.elements.subtitle.title = state.erpManaged ? '货位以系统（ERP）为准，自动同步，请在系统里改' : ''
   form.elements.category.value = product?.category || ''
   form.elements.displayCategory.value = product?.displayCategory || product?.category || ''
   form.elements.badge.value = product?.badge || ''
@@ -1797,10 +1801,11 @@ function renderSizeStocks(source = state.colorSizeStocks) {
   const sizes = [...new Set(splitList($('#productForm').elements.sizes.value))]
   const colors = [...new Set(splitList($('#productForm').elements.colors.value))]
   state.colorSizeStocks = Object.fromEntries(colors.map(color => [color, Object.fromEntries(sizes.map(size => [size, Math.max(0, Math.trunc(Number(source?.[color]?.[size]) || 0))]))]))
-  $('#sizeStockGrid').innerHTML = colors.map(color => `<section class="color-size-stock-group"><h4>${escapeHtml(color)}</h4><div class="color-size-stock-items">${sizes.map(size => {
+  const erpNote = state.erpManaged ? '<p class="erp-sync-note" style="margin:0 0 8px;color:#b45309">库存和货位以系统（ERP 总仓）为准，自动同步，这里不能改</p>' : ''
+  $('#sizeStockGrid').innerHTML = erpNote + colors.map(color => `<section class="color-size-stock-group"><h4>${escapeHtml(color)}</h4><div class="color-size-stock-items">${sizes.map(size => {
     const quantity = state.colorSizeStocks[color][size]
     const level = stockLevel(quantity)
-    return `<label class="size-stock-item ${level.className}"><span class="size-stock-label"><b>${escapeHtml(size)} 码</b><em class="size-stock-state">${level.label}</em></span><span class="size-stock-input"><input type="number" min="0" step="1" value="${quantity}" data-color-size-stock data-stock-color="${escapeHtml(color)}" data-stock-size="${escapeHtml(size)}" aria-label="${escapeHtml(color)} ${escapeHtml(size)} 码库存" /><i class="size-stock-unit">${escapeHtml($('#productForm').elements.unit.value || '件')}</i></span></label>`
+    return `<label class="size-stock-item ${level.className}"><span class="size-stock-label"><b>${escapeHtml(size)} 码</b><em class="size-stock-state">${level.label}</em></span><span class="size-stock-input"><input type="number" min="0" step="1" value="${quantity}"${state.erpManaged ? ' disabled' : ''} data-color-size-stock data-stock-color="${escapeHtml(color)}" data-stock-size="${escapeHtml(size)}" aria-label="${escapeHtml(color)} ${escapeHtml(size)} 码库存" /><i class="size-stock-unit">${escapeHtml($('#productForm').elements.unit.value || '件')}</i></span></label>`
   }).join('')}</div></section>`).join('')
   $('#sizeStockEmpty').textContent = colors.length ? '请先填写尺码，例如 S, M, L, XL' : '请先填写颜色和尺码，库存将按颜色分别设置'
   $('#sizeStockEmpty').classList.toggle('is-hidden', colors.length > 0 && sizes.length > 0)

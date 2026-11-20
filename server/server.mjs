@@ -14,6 +14,9 @@ import { imageRerankerStatus, rerankProductImageMatches } from './image-reranker
 import { keepRecognitionCase, pruneRecognitionCases, recognitionCasesStatus } from './recognition-cases.mjs'
 import { visualEmbeddingStatus } from './visual-embedding.mjs'
 import {
+  applyErpLocations,
+  applyErpStock,
+  isErpManaged,
   createAdminUser,
   createCategory,
   createProduct,
@@ -244,8 +247,20 @@ function filterProductImages(product, keep) {
 // the stock was imported, the position or status changed meanwhile) is rejected
 // instead of silently overwriting those changes. updatedAt is left out so an import
 // that did not change this product does not count as a conflict.
+// 库存以系统（ERPNext 总仓）为准（用户 2026-11-20）：with ERP_STOCK_SYNC_TOKEN set, the ERP sends stock to /api/erp/stock
+// after each 单子 (drafts included) and every hour; the 库存表 upload is off and the product editor leaves stock alone.
+const erpStockToken = String(process.env.ERP_STOCK_SYNC_TOKEN || '')
+const erpStockSync = erpStockToken.length >= 24
+
 function productRevision(product) {
   const { updatedAt, ...content } = product
+  if (erpStockSync) {
+    // Stock (and 货位) change with every ERP 单子; an editor opened before one must still be able to save.
+    delete content.stock
+    delete content.sizeStocks
+    delete content.colorSizeStocks
+    delete content.subtitle
+  }
   return createHash('sha1').update(JSON.stringify(content)).digest('hex').slice(0, 16)
 }
 
@@ -1246,6 +1261,26 @@ async function handleApi(req, res, url) {
     return true
   }
 
+  if (url.pathname === '/api/erp/stock' && req.method === 'POST') {
+    if (!erpStockSync) {
+      json(res, 404, { error: 'Not found' })
+      return true
+    }
+    const supplied = Buffer.from(String(req.headers['x-erp-token'] || ''))
+    const expected = Buffer.from(erpStockToken)
+    if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
+      json(res, 401, { error: '未授权' })
+      return true
+    }
+    const body = await readJson(req, 16 * 1024 * 1024)
+    const result = {}
+    if (Array.isArray(body.cells)) Object.assign(result, applyErpStock(body.cells, { full: Boolean(body.full) }))
+    if (Array.isArray(body.locations)) result.locations = applyErpLocations(body.locations)
+    if (result.productsUpdated || result.locations?.productsUpdated) markPublicDataChanged()
+    json(res, 200, { data: result })
+    return true
+  }
+
   if (url.pathname === '/api/auth/login' && req.method === 'POST') {
     const body = await readJson(req)
     const username = String(body.username || '').trim()
@@ -1675,6 +1710,10 @@ async function handleApi(req, res, url) {
   }
 
   if (url.pathname === '/api/admin/inventory/import' && req.method === 'POST') {
+    if (erpStockSync) {
+      json(res, 409, { error: '库存已改为以系统（ERP 总仓）为准，自动同步，不再上传库存表' })
+      return true
+    }
     const body = await readJson(req, 8 * 1024 * 1024)
     const parsed = await parseInventoryWorkbook(body)
     const result = parsed.format === 'warehouse'
@@ -1776,13 +1815,21 @@ async function handleApi(req, res, url) {
   if (adminProductMatch && req.method === 'GET') {
     const product = getProduct(adminProductMatch[1])
     if (!product) json(res, 404, { error: '商品不存在或已删除' })
-    else json(res, 200, { data: { ...product, revision: productRevision(product) } })
+    else json(res, 200, { data: { ...product, revision: productRevision(product), ...(erpStockSync && isErpManaged(product.id) ? { erpManaged: true } : {}) } })
     return true
   }
 
   if (adminProductMatch && req.method === 'PUT') {
     const previous = getProduct(adminProductMatch[1])
     const { expectedRevision, revision, ...changes } = await readJson(req)
+    delete changes.erpManaged
+    if (erpStockSync && isErpManaged(adminProductMatch[1])) {
+      // stock and 货位 of a product the ERP keeps come from the ERP only: what the editor had is not written back
+      delete changes.stock
+      delete changes.sizeStocks
+      delete changes.colorSizeStocks
+      delete changes.subtitle
+    }
     // Only the editor sends a revision; quick partial updates (上下架, 排序) do not.
     if (previous && expectedRevision && expectedRevision !== productRevision(previous)) {
       json(res, 409, { error: '保存失败：你打开编辑框之后，这个商品已被修改（其他管理员保存、调整排序或上下架、库存导入等）。为避免覆盖这些修改，本次没有保存。' })
